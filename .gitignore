@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Production builds
+client/dist/
+
+# Android build & local paths
+client/android/.gradle/
+client/android/build/
+client/android/app/build/
+client/android/local.properties
+.gradle/
+
+# Binaries & Temporary files
+cloudflared.exe
+*.apk
+*.log
+npm-debug.log*
+
+# SQLite journal files
+database.sqlite-wal
+database.sqlite-shm
+
+# IDE & OS
+.idea/
+.vscode/
+Thumbs.db

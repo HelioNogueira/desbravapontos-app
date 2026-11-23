@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DesbravaPontos</string>
+    <string name="title_activity_main">DesbravaPontos</string>
+    <string name="package_name">org.clube.desbravapontos</string>
+    <string name="custom_url_scheme">org.clube.desbravapontos</string>
+</resources>

@@ -1,0 +1,18 @@
+{
+  "name": "desbravapontos-app",
+  "version": "1.0.0",
+  "description": "Aplicativo Mobile de Pontuação e Leilão Virtual - Clube de Desbravadores",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "start": "node server/src/server.js",
+    "server": "cd server && npm start",
+    "client": "cd client && npm run dev",
+    "test": "cd server && npm test",
+    "reset-db": "cd server && npm run reset-db",
+    "open:android": "cd client && npx cap open android",
+    "build:client": "cd client && npm run build && npx cap sync android"
+  }
+}
