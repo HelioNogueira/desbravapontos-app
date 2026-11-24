@@ -30,7 +30,6 @@ export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('desbravapontos_token');
   const headers = {
     'Content-Type': 'application/json',
-    'bypass-tunnel-reminder': 'true',
     ...(options.headers || {})
   };
 

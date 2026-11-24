@@ -15,10 +15,7 @@ export function SocketProvider({ children }) {
     // Conectar ao backend (suporta Web e APK Nativo)
     const socketUrl = getBackendBaseUrl() || window.location.origin;
     const socketInstance = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      extraHeaders: {
-        'bypass-tunnel-reminder': 'true'
-      }
+      transports: ['websocket', 'polling']
     });
 
     socketInstance.on('connect', () => {

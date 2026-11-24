@@ -35,10 +35,13 @@ function AppContent() {
     );
   }
 
-  // Se não está logado, mostrar login automaticamente
-  if (!user && !showLogin) {
-    setTimeout(() => setShowLogin(true), 300);
-  }
+  // Se não está logado, abrir modal de login com segurança
+  React.useEffect(() => {
+    if (!user && !loading) {
+      const timer = setTimeout(() => setShowLogin(true), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [user, loading]);
 
   const handleNavigate = (tab) => {
     setActiveTab(tab);

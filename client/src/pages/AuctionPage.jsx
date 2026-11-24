@@ -28,7 +28,6 @@ import {
 export default function AuctionPage() {
   const { user, isSuperAdmin, isDirector, refreshUser } = useAuth();
   const { socket, addNotification } = useSocket();
-  const canManageAuction = isSuperAdmin || isDirector || (user && auctionData && auctionData.created_by === user.id);
 
   const [auctions, setAuctions] = useState([]);
   const [selectedAuctionId, setSelectedAuctionId] = useState(null);
@@ -40,6 +39,8 @@ export default function AuctionPage() {
   const [submittingBid, setSubmittingBid] = useState(false);
   const [bidError, setBidError] = useState('');
   const [bidSuccess, setBidSuccess] = useState('');
+
+  const canManageAuction = isSuperAdmin || isDirector || (user && auctionData && auctionData.created_by === user.id);
 
   // Modais de Criação e Ações do Superadmin
   const [showCreateModal, setShowCreateModal] = useState(false);
