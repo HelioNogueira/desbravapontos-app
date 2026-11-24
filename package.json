@@ -6,7 +6,8 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "build": "npm --prefix server install",
+    "build:full": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
     "start": "node server/src/server.js",
     "server": "cd server && npm start",
     "client": "cd client && npm run dev",

@@ -1,0 +1,18 @@
+{
+  "name": "DesbravaPontos - Clube de Desbravadores",
+  "short_name": "DesbravaPontos",
+  "description": "Aplicativo oficial de pontuação e leilão virtual para Clubes de Desbravadores",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/shield.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
