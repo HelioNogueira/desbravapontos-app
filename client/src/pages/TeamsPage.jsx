@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import Avatar from '../components/Avatar';
 import {
   Shield,
@@ -16,6 +17,7 @@ import {
 
 export default function TeamsPage() {
   const { user, isSuperAdmin, isDirector } = useAuth();
+  const { socket } = useSocket();
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [teamDetails, setTeamDetails] = useState(null);
@@ -64,6 +66,25 @@ export default function TeamsPage() {
       loadTeamDetails(selectedTeam);
     }
   }, [selectedTeam]);
+
+  // Atualizar equipes e detalhes em tempo real quando houver leilões ou pontuações
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = () => {
+      loadTeams();
+      if (selectedTeam) loadTeamDetails(selectedTeam);
+    };
+
+    socket.on('ranking_updated', handleUpdate);
+    socket.on('auction_ended', handleUpdate);
+    socket.on('new_bid', handleUpdate);
+
+    return () => {
+      socket.off('ranking_updated', handleUpdate);
+      socket.off('auction_ended', handleUpdate);
+      socket.off('new_bid', handleUpdate);
+    };
+  }, [socket, selectedTeam]);
 
   const handleTransfer = async (e) => {
     e.preventDefault();
@@ -167,9 +188,16 @@ export default function TeamsPage() {
 
             <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
               <span className="text-slate-400">{t.members_count} membros</span>
-              <span className="font-black text-amber-400 text-sm">
-                {t.effective_points?.toLocaleString('pt-BR')} pts
-              </span>
+              <div className="text-right">
+                <span className="font-black text-amber-400 text-sm block">
+                  {t.effective_points?.toLocaleString('pt-BR')} pts
+                </span>
+                {t.wallet_points !== undefined && (
+                  <span className="text-[10px] text-slate-400 block font-normal">
+                    {t.wallet_points?.toLocaleString('pt-BR')} saldo leilão
+                  </span>
+                )}
+              </div>
             </div>
           </button>
         ))}
@@ -246,8 +274,13 @@ export default function TeamsPage() {
                   </div>
 
                   <div className="text-right shrink-0">
-                    <div className="text-xs font-black text-amber-400">{m.points_balance} pts</div>
-                    <div className="text-[10px] text-slate-500">#{idx + 1} na equipe</div>
+                    <div className="text-xs font-black text-amber-400">
+                      {(m.total_points > 0 ? m.total_points : m.points_balance)?.toLocaleString('pt-BR')} pts
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Saldo Leilão: {m.points_balance?.toLocaleString('pt-BR')} pts
+                    </div>
+                    <div className="text-[9px] text-slate-500">#{idx + 1} na equipe</div>
                   </div>
                 </div>
               ))}

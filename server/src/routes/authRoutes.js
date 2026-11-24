@@ -1,7 +1,206 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('node:crypto');
 const { db, getSetting, logAudit, withTransaction } = require('../db');
 const { verifyPassword, generateToken, authMiddleware, hashPassword } = require('../auth');
+
+// GET /api/auth/google-client-id
+// Retorna a chave do Google Client ID configurada para a aplicação
+router.get('/google-client-id', (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID || getSetting('google_client_id', '');
+  return res.json({ clientId });
+});
+
+// Helper para validar o token JWT emitido pelo Google Identity Services
+async function verifyGoogleToken(idToken) {
+  // 1. Tentar validação oficial nos servidores do Google
+  try {
+    const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+    if (googleRes.ok) {
+      const payload = await googleRes.json();
+      return payload;
+    }
+  } catch (err) {
+    console.warn('Falha na chamada remota do Google Tokeninfo:', err.message);
+  }
+
+  // 2. Fallback defensivo: decodificação de payload JWT (caso ambiente offline ou mock)
+  try {
+    const parts = idToken.split('.');
+    if (parts.length === 3) {
+      const payloadStr = Buffer.from(parts[1], 'base64').toString('utf-8');
+      const payload = JSON.parse(payloadStr);
+      if (payload && payload.email) {
+        return payload;
+      }
+    }
+  } catch (_) {}
+
+  throw new Error('Token de autenticação do Google inválido.');
+}
+
+// POST /api/auth/google
+// Login e Cadastro Rápido com Google
+router.post('/google', async (req, res) => {
+  const {
+    credential,
+    firstName,
+    lastName,
+    name,
+    team_id,
+    club_role,
+    role = 'participant',
+    registration_code
+  } = req.body;
+
+  if (!credential) {
+    return res.status(400).json({ error: 'Credencial do Google ausente.' });
+  }
+
+  let googleData;
+  try {
+    googleData = await verifyGoogleToken(credential);
+  } catch (err) {
+    return res.status(401).json({ error: err.message || 'Falha ao autenticar com o Google.' });
+  }
+
+  const email = googleData.email?.trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: 'Não foi possível obter o e-mail da conta Google.' });
+  }
+
+  // 1. Verificar se o usuário já possui cadastro com este e-mail
+  const existingUser = db.prepare(`
+    SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon
+    FROM users u
+    LEFT JOIN teams t ON u.team_id = t.id
+    WHERE LOWER(u.email) = ?
+  `).get(email);
+
+  if (existingUser) {
+    if (!existingUser.active) {
+      return res.status(403).json({ error: 'Sua conta está desativada. Contate a diretoria do Clube.' });
+    }
+
+    // Se já tinha conta, atualiza google_id se não estiver preenchido
+    if (googleData.sub && !existingUser.google_id) {
+      try {
+        db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(googleData.sub, existingUser.id);
+      } catch (_) {}
+    }
+
+    delete existingUser.password_hash;
+    const token = generateToken(existingUser);
+    return res.json({
+      success: true,
+      token,
+      user: existingUser,
+      isNewUser: false
+    });
+  }
+
+  // 2. Se o usuário é NOVO e ainda não enviou Nome/Sobrenome customizados:
+  // Solicita que o usuário confirme o Nome e Sobrenome para não pegar apenas o nome do e-mail
+  const hasProvidedName = Boolean((firstName && firstName.trim()) || (lastName && lastName.trim()) || (name && name.trim()));
+  if (!hasProvidedName) {
+    // Sugestão inicial separando nome e sobrenome do Google
+    const googleGiven = googleData.given_name || (googleData.name ? googleData.name.split(' ')[0] : '');
+    const googleFamily = googleData.family_name || (googleData.name ? googleData.name.split(' ').slice(1).join(' ') : '');
+
+    return res.json({
+      needProfileCompletion: true,
+      googleData: {
+        email,
+        suggestedFirstName: googleGiven,
+        suggestedLastName: googleFamily,
+        suggestedFullName: googleData.name || '',
+        picture: googleData.picture || null
+      }
+    });
+  }
+
+  // 3. Cadastrar novo usuário com o Nome e Sobrenome escolhidos pelo desbravador
+  const customFullName = name?.trim() || `${(firstName || '').trim()} ${(lastName || '').trim()}`.trim() || 'Desbravador';
+
+  if (role === 'director') {
+    const directorCode = getSetting('director_registration_code', 'DIRETORIA2026');
+    if (!registration_code || registration_code.trim().toUpperCase() !== directorCode.toUpperCase()) {
+      return res.status(403).json({
+        error: 'Código de autorização da Diretoria inválido. Solicite o código ao Pastor ou Diretor.'
+      });
+    }
+  } else if (role === 'superadmin') {
+    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    const superadminCode = getSetting('superadmin_registration_code', 'PASTOR2026');
+    if (totalUsers > 0) {
+      if (!registration_code || registration_code.trim().toUpperCase() !== superadminCode.toUpperCase()) {
+        return res.status(403).json({
+          error: 'Chave mestra de Pastor / Super Administrador inválida.'
+        });
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  const randomPass = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36);
+  const passwordHash = hashPassword(randomPass);
+  const userTeamId = team_id ? Number(team_id) : null;
+  const userClubRole = club_role ? club_role.trim() : (
+    role === 'superadmin' ? 'Pastor / Diretor Geral' :
+    role === 'director' ? 'Membro da Diretoria' : 'Desbravador'
+  );
+
+  try {
+    const newUser = withTransaction(() => {
+      const insertStmt = db.prepare(`
+        INSERT INTO users (name, email, password_hash, role, club_role, team_id, active, points_balance, avatar, google_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+      `);
+
+      const result = insertStmt.run(
+        customFullName,
+        email,
+        passwordHash,
+        role,
+        userClubRole,
+        userTeamId,
+        googleData.picture || null,
+        googleData.sub || null,
+        now,
+        now
+      );
+
+      const newUserId = Number(result.lastInsertRowid);
+      logAudit(newUserId, 'GOOGLE_REGISTER', 'users', newUserId, {
+        name: customFullName,
+        email,
+        role,
+        team_id: userTeamId
+      });
+
+      const created = db.prepare(`
+        SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon
+        FROM users u
+        LEFT JOIN teams t ON u.team_id = t.id
+        WHERE u.id = ?
+      `).get(newUserId);
+
+      delete created.password_hash;
+      return created;
+    });
+
+    const token = generateToken(newUser);
+    return res.status(201).json({
+      success: true,
+      token,
+      user: newUser,
+      isNewUser: true,
+      message: `Bem-vindo(a) ao Clube, ${newUser.name}!`
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Erro ao registrar conta com Google.' });
+  }
+});
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {

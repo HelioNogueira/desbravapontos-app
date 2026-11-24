@@ -10,11 +10,12 @@ router.get('/', authMiddleware, (req, res) => {
   const teams = db.prepare(`
     SELECT t.id, t.name, t.color, t.icon, t.motto, t.collective_balance, t.created_at,
            COUNT(u.id) as members_count,
-           COALESCE(SUM(u.points_balance), 0) as total_individual_points
+           COALESCE(SUM(CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END), 0) as total_individual_points,
+           COALESCE(SUM(u.points_balance), 0) as total_wallet_balance
     FROM teams t
     LEFT JOIN users u ON u.team_id = t.id AND u.active = 1
     GROUP BY t.id
-    ORDER BY total_individual_points DESC
+    ORDER BY total_individual_points DESC, total_wallet_balance DESC, t.name ASC
   `).all();
 
   const formatted = teams.map((team, idx) => {
@@ -22,6 +23,7 @@ router.get('/', authMiddleware, (req, res) => {
     return {
       ...team,
       effective_points: effectivePoints,
+      wallet_points: team.total_wallet_balance,
       rank: idx + 1
     };
   });
@@ -45,13 +47,14 @@ router.get('/:id', authMiddleware, (req, res) => {
   }
 
   const members = db.prepare(`
-    SELECT id, name, email, role, points_balance, avatar, active
+    SELECT id, name, email, role, points_balance, total_points, avatar, active
     FROM users
     WHERE team_id = ?
-    ORDER BY points_balance DESC, name ASC
+    ORDER BY CASE WHEN total_points > 0 THEN total_points ELSE points_balance END DESC, points_balance DESC, name ASC
   `).all(teamId);
 
-  const totalPoints = members.reduce((acc, m) => acc + (m.active ? m.points_balance : 0), 0);
+  const totalPoints = members.reduce((acc, m) => acc + (m.active ? (m.total_points > 0 ? m.total_points : m.points_balance) : 0), 0);
+  const totalWallet = members.reduce((acc, m) => acc + (m.active ? m.points_balance : 0), 0);
 
   // Histórico de pontos da equipe
   const recentHistory = db.prepare(`
@@ -69,6 +72,7 @@ router.get('/:id', authMiddleware, (req, res) => {
       ...team,
       members_count: members.length,
       total_points: totalPoints,
+      total_wallet: totalWallet,
       members,
       recent_history: recentHistory
     }

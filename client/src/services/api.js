@@ -67,6 +67,8 @@ export const api = {
   // Auth
   login: (email, password) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   register: (userData) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
+  getGoogleClientId: () => apiRequest('/auth/google-client-id'),
+  loginWithGoogle: (data) => apiRequest('/auth/google', { method: 'POST', body: JSON.stringify(data) }),
   getPublicTeams: () => apiRequest('/auth/public-teams'),
   getMe: () => apiRequest('/auth/me'),
   updateProfile: (profileData) => apiRequest('/auth/profile', { method: 'PUT', body: JSON.stringify(profileData) }),

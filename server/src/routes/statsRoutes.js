@@ -55,17 +55,19 @@ router.get('/dashboard', authMiddleware, (req, res) => {
   const teamsRank = db.prepare(`
     SELECT t.id, t.name, t.color, t.icon, t.motto, t.collective_balance,
            COUNT(u.id) as members_count,
-           COALESCE(SUM(u.points_balance), 0) as total_points
+           COALESCE(SUM(CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END), 0) as total_points,
+           COALESCE(SUM(u.points_balance), 0) as total_wallet_balance
     FROM teams t
     LEFT JOIN users u ON u.team_id = t.id AND u.active = 1 AND u.role = 'participant'
     GROUP BY t.id
-    ORDER BY total_points DESC
+    ORDER BY total_points DESC, total_wallet_balance DESC, t.name ASC
   `).all();
 
   const formattedTeams = teamsRank.map((t, i) => ({
     ...t,
     rank: i + 1,
-    effective_points: scoreMode === 'collective' ? t.collective_balance : t.total_points
+    effective_points: scoreMode === 'collective' ? t.collective_balance : t.total_points,
+    wallet_points: t.total_wallet_balance
   }));
 
   if (scoreMode === 'collective') {
@@ -75,12 +77,14 @@ router.get('/dashboard', authMiddleware, (req, res) => {
 
   // 7. Ranking dos Participantes (Top 10)
   const topParticipants = db.prepare(`
-    SELECT u.id, u.name, u.email, u.points_balance, u.avatar,
+    SELECT u.id, u.name, u.email, u.points_balance,
+           CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END as total_points,
+           u.avatar,
            t.name as team_name, t.color as team_color
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
     WHERE u.role = 'participant' AND u.active = 1
-    ORDER BY u.points_balance DESC, u.name ASC
+    ORDER BY CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END DESC, u.points_balance DESC, u.name ASC
     LIMIT 10
   `).all().map((p, i) => ({ ...p, rank: i + 1 }));
 
@@ -120,7 +124,9 @@ router.get('/rankings', authMiddleware, (req, res) => {
   const { team_id } = req.query;
 
   let query = `
-    SELECT u.id, u.name, u.email, u.points_balance, u.avatar,
+    SELECT u.id, u.name, u.email, u.points_balance,
+           CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END as total_points,
+           u.avatar,
            t.id as team_id, t.name as team_name, t.color as team_color
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
@@ -133,7 +139,7 @@ router.get('/rankings', authMiddleware, (req, res) => {
     params.push(team_id);
   }
 
-  query += ' ORDER BY u.points_balance DESC, u.name ASC';
+  query += ' ORDER BY CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END DESC, u.points_balance DESC, u.name ASC';
 
   const participants = db.prepare(query).all(...params).map((p, i) => ({
     ...p,

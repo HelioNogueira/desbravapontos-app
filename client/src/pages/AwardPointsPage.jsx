@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import Avatar from '../components/Avatar';
 import {
   Award,
   Users,
@@ -14,7 +15,12 @@ import {
   ArrowRight,
   Info,
   Clock,
-  RotateCcw
+  RotateCcw,
+  Search,
+  ChevronDown,
+  Check,
+  X,
+  Filter
 } from 'lucide-react';
 
 export default function AwardPointsPage() {
@@ -41,6 +47,12 @@ export default function AwardPointsPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ error: '', success: '' });
+
+  // Controle de busca e seleção estilizada de membros
+  const [memberSearch, setMemberSearch] = useState('');
+  const [teamFilter, setTeamFilter] = useState('all');
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
+  const [batchSearch, setBatchSearch] = useState('');
 
   // Modal de Estorno (para Superadmin)
   const [revertTxId, setRevertTxId] = useState(null);
@@ -279,21 +291,199 @@ export default function AwardPointsPage() {
               </div>
 
               <form onSubmit={handleSingleSubmit} className="space-y-4">
+                {/* Seletor Estilizado de Participante */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Participante (Desbravador)
-                  </label>
-                  <select
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
-                  >
-                    {usersList.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} — {u.team_name || 'Sem Unidade'} ({u.points_balance} pts)
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      Participante Destinatário
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowMemberPicker(!showMemberPicker)}
+                      className="text-xs font-semibold text-amber-400 hover:text-amber-300 transition flex items-center gap-1"
+                    >
+                      {showMemberPicker ? 'Fechar Seleção' : 'Alterar Membro'}
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMemberPicker ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+
+                  {/* Card do Membro Atualmente Selecionado */}
+                  {selectedUser ? (
+                    <div
+                      onClick={() => setShowMemberPicker(!showMemberPicker)}
+                      className="p-3.5 rounded-2xl bg-slate-800/90 border border-slate-700/80 hover:border-amber-500/50 cursor-pointer transition flex items-center justify-between gap-3 shadow-md group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar
+                          src={selectedUser.avatar}
+                          name={selectedUser.name}
+                          size="md"
+                          className="ring-2 ring-amber-500/30 group-hover:ring-amber-500 transition"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-black text-white truncate flex items-center gap-2">
+                            {selectedUser.name}
+                            {selectedUser.team_name && (
+                              <span
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0"
+                                style={{ backgroundColor: selectedUser.team_color || '#1e40af' }}
+                              >
+                                {selectedUser.team_name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate">{selectedUser.email}</div>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-extrabold text-amber-400 block">
+                          {(selectedUser.total_points || selectedUser.points_balance)?.toLocaleString('pt-BR')} pts geral
+                        </span>
+                        <span className="text-[10px] text-slate-400 block font-normal">
+                          Saldo leilão: {selectedUser.points_balance?.toLocaleString('pt-BR')} pts
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => setShowMemberPicker(true)}
+                      className="p-3.5 rounded-2xl bg-slate-800/60 border border-dashed border-slate-700 text-center text-xs text-slate-400 cursor-pointer hover:border-amber-500"
+                    >
+                      Nenhum desbravador selecionado. Clique para escolher.
+                    </div>
+                  )}
+
+                  {/* Gaveta / Dropdown Estilizado de Escolha */}
+                  {showMemberPicker && (
+                    <div className="mt-2.5 p-3 rounded-2xl bg-slate-850 border border-slate-750 shadow-2xl space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
+                      {/* Campo de Busca Rápida */}
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={memberSearch}
+                          onChange={(e) => setMemberSearch(e.target.value)}
+                          placeholder="Buscar por nome, e-mail ou unidade..."
+                          className="w-full pl-9 pr-8 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                        />
+                        {memberSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberSearch('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Filtro Rápido de Unidades */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
+                        <button
+                          type="button"
+                          onClick={() => setTeamFilter('all')}
+                          className={`px-2.5 py-1 rounded-lg font-bold shrink-0 transition ${
+                            teamFilter === 'all'
+                              ? 'bg-amber-500 text-slate-950 shadow-sm'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Todas as Unidades ({usersList.length})
+                        </button>
+                        {teamsList.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setTeamFilter(String(t.id))}
+                            className={`px-2.5 py-1 rounded-lg font-bold shrink-0 transition flex items-center gap-1.5 ${
+                              teamFilter === String(t.id)
+                                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                                : 'bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
+                            {t.name}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Lista de Membros Filtrados */}
+                      <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-800/40">
+                        {usersList
+                          .filter((u) => {
+                            const term = memberSearch.trim().toLowerCase();
+                            const matchesSearch = !term ||
+                              u.name.toLowerCase().includes(term) ||
+                              (u.team_name && u.team_name.toLowerCase().includes(term)) ||
+                              (u.email && u.email.toLowerCase().includes(term));
+                            const matchesTeam = teamFilter === 'all' || String(u.team_id) === String(teamFilter);
+                            return matchesSearch && matchesTeam;
+                          })
+                          .map((u) => {
+                            const isSelected = Number(selectedUserId) === Number(u.id);
+                            return (
+                              <button
+                                key={u.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUserId(u.id);
+                                  setShowMemberPicker(false);
+                                }}
+                                className={`w-full p-2.5 rounded-xl text-left transition flex items-center justify-between gap-3 ${
+                                  isSelected
+                                    ? 'bg-amber-500/15 border border-amber-500/40 text-white'
+                                    : 'hover:bg-slate-800/80 text-slate-300'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <Avatar src={u.avatar} name={u.name} size="sm" />
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                                      {u.name}
+                                      {isSelected && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                      {u.team_name ? (
+                                        <>
+                                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: u.team_color || '#1e40af' }} />
+                                          <span>{u.team_name}</span>
+                                        </>
+                                      ) : (
+                                        <span>Sem Unidade</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="text-right shrink-0">
+                                  <span className="text-xs font-black text-amber-400 block">
+                                    {(u.total_points || u.points_balance)?.toLocaleString('pt-BR')} pts
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 block">
+                                    Saldo: {u.points_balance?.toLocaleString('pt-BR')}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+
+                        {usersList.filter((u) => {
+                          const term = memberSearch.trim().toLowerCase();
+                          const matchesSearch = !term ||
+                            u.name.toLowerCase().includes(term) ||
+                            (u.team_name && u.team_name.toLowerCase().includes(term)) ||
+                            (u.email && u.email.toLowerCase().includes(term));
+                          const matchesTeam = teamFilter === 'all' || String(u.team_id) === String(teamFilter);
+                          return matchesSearch && matchesTeam;
+                        }).length === 0 && (
+                          <div className="py-6 text-center text-xs text-slate-500">
+                            Nenhum participante encontrado com esse filtro.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -421,24 +611,98 @@ export default function AwardPointsPage() {
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Marque os Participantes ({selectedUserIds.length} selecionados):
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-950/60 rounded-xl border border-slate-800">
-                      {usersList.map((u) => (
-                        <label
-                          key={u.id}
-                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer text-xs text-slate-300"
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                      <label className="block text-xs font-semibold text-slate-300">
+                        Marque os Participantes ({selectedUserIds.length} selecionados):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserIds(usersList.map(u => u.id))}
+                          className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition"
                         >
-                          <input
-                            type="checkbox"
-                            checked={selectedUserIds.includes(u.id)}
-                            onChange={() => toggleSelectUser(u.id)}
-                            className="accent-amber-500 rounded"
-                          />
-                          <span className="truncate">{u.name} ({u.team_name || 'Sem Unidade'})</span>
-                        </label>
-                      ))}
+                          Selecionar Todos
+                        </button>
+                        <span className="text-slate-600">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserIds([])}
+                          className="text-[11px] font-bold text-slate-400 hover:text-white transition"
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Busca Rápida no Lote */}
+                    <div className="relative mb-2">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={batchSearch}
+                        onChange={(e) => setBatchSearch(e.target.value)}
+                        placeholder="Filtrar por nome ou unidade..."
+                        className="w-full pl-8 pr-7 py-1.5 bg-slate-800/90 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                      />
+                      {batchSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setBatchSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-2 bg-slate-950/60 rounded-2xl border border-slate-800">
+                      {usersList
+                        .filter((u) => {
+                          const term = batchSearch.trim().toLowerCase();
+                          return !term ||
+                            u.name.toLowerCase().includes(term) ||
+                            (u.team_name && u.team_name.toLowerCase().includes(term)) ||
+                            (u.email && u.email.toLowerCase().includes(term));
+                        })
+                        .map((u) => {
+                          const isChecked = selectedUserIds.includes(u.id);
+                          return (
+                            <label
+                              key={u.id}
+                              className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition border ${
+                                isChecked
+                                  ? 'bg-amber-500/10 border-amber-500/40 text-white'
+                                  : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:bg-slate-850'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleSelectUser(u.id)}
+                                  className="accent-amber-500 rounded w-4 h-4"
+                                />
+                                <Avatar src={u.avatar} name={u.name} size="xs" />
+                                <div className="min-w-0">
+                                  <div className="font-bold truncate text-[11px]">{u.name}</div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                    {u.team_name ? (
+                                      <>
+                                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: u.team_color || '#1e40af' }} />
+                                        <span>{u.team_name}</span>
+                                      </>
+                                    ) : (
+                                      'Sem Unidade'
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-black text-amber-400 shrink-0 ml-1">
+                                {(u.total_points || u.points_balance)?.toLocaleString('pt-BR')} pts
+                              </span>
+                            </label>
+                          );
+                        })}
                     </div>
                   </div>
                 )}

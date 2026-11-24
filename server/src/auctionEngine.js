@@ -140,6 +140,10 @@ function endAuction(auctionId, reason = 'Encerramento') {
       reason,
       message: 'O leilão foi encerrado com sucesso!'
     });
+    ioInstance.emit('ranking_updated', {
+      auctionId,
+      reason
+    });
   }
 }
 
@@ -345,6 +349,7 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
     // Emitir para todos em tempo real
     if (ioInstance) {
       ioInstance.emit('new_bid', payload);
+      ioInstance.emit('ranking_updated', { trigger: 'new_bid', teamId: user.team_id });
       if (extended) {
         ioInstance.emit('auction_extended', {
           auctionId,

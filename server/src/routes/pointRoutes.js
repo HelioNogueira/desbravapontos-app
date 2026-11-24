@@ -79,8 +79,11 @@ router.post('/award-single', authMiddleware, requireRole(['superadmin', 'directo
       const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1').get();
       const cycleId = activeCycle ? activeCycle.id : null;
 
-      // Atualizar saldo
-      db.prepare('UPDATE users SET points_balance = ?, updated_at = ? WHERE id = ?').run(newBalance, now, user_id);
+      // Atualizar saldo da carteira e pontuação geral da temporada
+      const currentTotal = user.total_points !== undefined ? user.total_points : user.points_balance;
+      const newTotalPoints = Math.max(0, currentTotal + numAmount);
+      db.prepare('UPDATE users SET points_balance = ?, total_points = ?, updated_at = ? WHERE id = ?')
+        .run(newBalance, newTotalPoints, now, user_id);
 
       // Inserir transação
       const txResult = db.prepare(`
@@ -186,7 +189,10 @@ router.post('/award-batch', authMiddleware, requireRole(['superadmin', 'director
           throw new Error(`O participante "${user.name}" ficaria com saldo negativo (${newBal} pts).`);
         }
 
-        db.prepare('UPDATE users SET points_balance = ?, updated_at = ? WHERE id = ?').run(newBal, now, user.id);
+        const currentTotal = user.total_points !== undefined ? user.total_points : user.points_balance;
+        const newTotal = Math.max(0, currentTotal + userAmount);
+        db.prepare('UPDATE users SET points_balance = ?, total_points = ?, updated_at = ? WHERE id = ?')
+          .run(newBal, newTotal, now, user.id);
 
         const txRes = db.prepare(`
           INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, batch_id, created_at)
@@ -310,8 +316,11 @@ router.post('/revert/:txId', authMiddleware, requireRole('superadmin'), (req, re
       // Marcar original como revertida
       db.prepare('UPDATE point_transactions SET is_reverted = 1, reverted_reason = ? WHERE id = ?').run(reason.trim(), txId);
 
-      // Atualizar saldo do usuário
-      db.prepare('UPDATE users SET points_balance = ?, updated_at = ? WHERE id = ?').run(newBal, now, user.id);
+      // Atualizar saldo do usuário e pontuação geral
+      const currentTotal = user.total_points !== undefined ? user.total_points : user.points_balance;
+      const newTotal = Math.max(0, currentTotal + reverseAmount);
+      db.prepare('UPDATE users SET points_balance = ?, total_points = ?, updated_at = ? WHERE id = ?')
+        .run(newBal, newTotal, now, user.id);
 
       // Inserir registro compensatório no extrato
       const compTx = db.prepare(`

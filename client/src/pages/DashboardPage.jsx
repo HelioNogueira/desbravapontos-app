@@ -68,12 +68,14 @@ export default function DashboardPage({ onNavigate }) {
 
     socket.on('auction_tick', handleTick);
     socket.on('new_bid', handleNewBid);
+    socket.on('ranking_updated', handleNewBid);
     socket.on('auction_started', handleAuctionStarted);
     socket.on('auction_ended', handleAuctionEnded);
 
     return () => {
       socket.off('auction_tick', handleTick);
       socket.off('new_bid', handleNewBid);
+      socket.off('ranking_updated', handleNewBid);
       socket.off('auction_started', handleAuctionStarted);
       socket.off('auction_ended', handleAuctionEnded);
     };
@@ -366,9 +368,14 @@ export default function DashboardPage({ onNavigate }) {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs font-extrabold text-amber-400">
-                      {part.points_balance?.toLocaleString('pt-BR')} pts
+                    <span className="text-xs font-extrabold text-amber-400 block">
+                      {(part.total_points || part.points_balance)?.toLocaleString('pt-BR')} pts
                     </span>
+                    {part.total_points && part.total_points !== part.points_balance && (
+                      <span className="text-[10px] text-slate-400 block">
+                        Saldo: {part.points_balance?.toLocaleString('pt-BR')}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

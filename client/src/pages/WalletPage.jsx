@@ -122,10 +122,12 @@ export default function WalletPage({ onOpenProfile }) {
               <span className="text-base font-normal text-amber-400 ml-2">pts</span>
             </div>
 
-            <p className="text-xs text-slate-300 mt-3 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Pontos acumulados sem data de expiração obrigatória.
-            </p>
+            <div className="mt-3 pt-2.5 border-t border-amber-500/20 flex items-center justify-between text-xs">
+              <span className="text-slate-300">Pontuação Geral (Ranking):</span>
+              <span className="font-extrabold text-amber-300">
+                {(user?.total_points || user?.points_balance || 0)?.toLocaleString('pt-BR')} pts
+              </span>
+            </div>
           </div>
 
           {/* Cartão 2: Posição no Ranking Individual */}

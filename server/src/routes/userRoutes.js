@@ -8,7 +8,9 @@ router.get('/', authMiddleware, (req, res) => {
   const { team_id, role, search } = req.query;
 
   let query = `
-    SELECT u.id, u.name, u.email, u.role, u.team_id, u.active, u.points_balance, u.avatar, u.created_at,
+    SELECT u.id, u.name, u.email, u.role, u.team_id, u.active, u.points_balance,
+           CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END as total_points,
+           u.avatar, u.created_at,
            t.name as team_name, t.color as team_color
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
@@ -53,9 +55,9 @@ router.post('/', authMiddleware, requireRole('superadmin'), (req, res) => {
 
   const result = withTransaction(() => {
     const insertRes = db.prepare(`
-      INSERT INTO users (name, email, password_hash, role, team_id, active, points_balance, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-    `).run(name.trim(), email.trim().toLowerCase(), passHash, role, team_id || null, initial_points || 0, now, now);
+      INSERT INTO users (name, email, password_hash, role, team_id, active, points_balance, total_points, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    `).run(name.trim(), email.trim().toLowerCase(), passHash, role, team_id || null, initial_points || 0, initial_points || 0, now, now);
 
     const newUserId = Number(insertRes.lastInsertRowid);
 

@@ -44,6 +44,16 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const loginWithGoogle = async (googlePayload) => {
+    const data = await api.loginWithGoogle(googlePayload);
+    if (data.token && data.user) {
+      localStorage.setItem('desbravapontos_token', data.token);
+      setToken(data.token);
+      setUser(data.user);
+    }
+    return data;
+  };
+
   const logout = () => {
     localStorage.removeItem('desbravapontos_token');
     setToken(null);
@@ -80,6 +90,7 @@ export function AuthProvider({ children }) {
         loading,
         login,
         register,
+        loginWithGoogle,
         logout,
         updateUserBalance,
         updateProfile,

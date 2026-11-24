@@ -163,6 +163,24 @@ function initDatabase() {
   try {
     db.exec('ALTER TABLE users ADD COLUMN club_role TEXT;');
   } catch (_) {}
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN google_id TEXT;');
+  } catch (_) {}
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN total_points INTEGER NOT NULL DEFAULT 0;');
+  } catch (_) {}
+
+  // Sincronizar total_points inicial com base em points_balance caso esteja zerado
+  try {
+    db.exec(`
+      UPDATE users
+      SET total_points = CASE
+        WHEN total_points > 0 THEN total_points
+        WHEN points_balance > 0 THEN points_balance
+        ELSE 0
+      END;
+    `);
+  } catch (_) {}
 
   // Configurações padrão se ainda não existirem
   const defaultSettings = [
@@ -179,7 +197,8 @@ function initDatabase() {
     { key: 'require_points_for_bids', value: 'true' }, // 'true' = exige saldo em carteira; 'false' = lances livres sem trava de saldo
     { key: 'enable_points_system', value: 'true' }, // 'true' = pontuação ativa; 'false' = modo simplificado
     { key: 'club_name', value: 'Clube de Desbravadores Albatroz' },
-    { key: 'timezone', value: 'America/Sao_Paulo' }
+    { key: 'timezone', value: 'America/Sao_Paulo' },
+    { key: 'google_client_id', value: '' }
   ];
 
   const checkStmt = db.prepare('SELECT key FROM app_settings WHERE key = ?');
