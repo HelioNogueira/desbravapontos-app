@@ -16,6 +16,21 @@
 
     <title>DesbravaPontos - Clube de Desbravadores</title>
     
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        var errDiv = document.createElement('div');
+        errDiv.style = "position:fixed;top:0;left:0;right:0;background:#dc2626;color:white;padding:16px;z-index:999999;font-family:sans-serif;font-size:14px;white-space:pre-wrap;";
+        errDiv.innerText = "Erro no App: " + msg + " (Linha: " + line + ")";
+        document.body.appendChild(errDiv);
+      };
+      window.onunhandledrejection = function(e) {
+        var errDiv = document.createElement('div');
+        errDiv.style = "position:fixed;top:0;left:0;right:0;background:#dc2626;color:white;padding:16px;z-index:999999;font-family:sans-serif;font-size:14px;white-space:pre-wrap;";
+        errDiv.innerText = "Erro na Promessa: " + (e.reason && e.reason.message || e.reason);
+        document.body.appendChild(errDiv);
+      };
+    </script>
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">

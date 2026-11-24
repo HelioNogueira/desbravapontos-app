@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import Navbar from './components/Navbar';
@@ -36,7 +36,7 @@ function AppContent() {
   }
 
   // Se não está logado, abrir modal de login com segurança
-  React.useEffect(() => {
+  useEffect(() => {
     if (!user && !loading) {
       const timer = setTimeout(() => setShowLogin(true), 300);
       return () => clearTimeout(timer);
