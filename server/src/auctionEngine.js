@@ -182,7 +182,7 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
       throw new Error('Você já possui o maior lance atual para este item!');
     }
 
-    const requirePoints = getSetting('require_points_for_bids', 'false') === 'true';
+    const requirePoints = getSetting('require_points_for_bids', 'true') !== 'false';
 
     let team = null;
     if (requirePoints) {
@@ -196,7 +196,7 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
       } else {
         // Saldo individual
         if (user.points_balance < numAmount) {
-          throw new Error(`Saldo insuficiente! Você possui ${user.points_balance} pontos, mas o lance é de ${numAmount} pontos.`);
+          throw new Error(`Saldo insuficiente! Seu saldo é de ${user.points_balance} pontos, mas este lance exige ${numAmount} pontos.`);
         }
       }
     }

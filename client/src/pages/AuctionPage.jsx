@@ -260,6 +260,12 @@ export default function AuctionPage() {
       return;
     }
 
+    const userBalance = user ? (user.points_balance || 0) : 0;
+    if (amount > userBalance) {
+      setBidError(`Saldo insuficiente! Seu saldo é de ${userBalance} pts, mas o lance exige ${amount} pts.`);
+      return;
+    }
+
     setSubmittingBid(true);
     setBidError('');
     setBidSuccess('');
@@ -663,19 +669,40 @@ export default function AuctionPage() {
                         </span>
                       </div>
 
+                      {/* Alerta de Saldo Insuficiente para Lances */}
+                      {user && user.points_balance < minBidRequired && (
+                        <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2.5">
+                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          <div>
+                            <span className="font-bold">Limite de saldo atingido: </span>
+                            <span>O próximo lance mínimo é de <strong>{minBidRequired} pts</strong>, mas seu saldo em carteira é de <strong>{user.points_balance} pts</strong>.</span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Botões de Lances Rápidos */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[minBidRequired, minBidRequired + 10, minBidRequired + 25, minBidRequired + 50].map((quickVal) => (
-                          <button
-                            key={quickVal}
-                            onClick={() => handlePlaceBid(quickVal)}
-                            disabled={submittingBid}
-                            className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-xs font-bold text-white transition disabled:opacity-40 disabled:pointer-events-none flex flex-col items-center justify-center gap-0.5"
-                          >
-                            <span>+{quickVal - (activeItem.current_bid || 0)} pts</span>
-                            <span className="text-[10px] text-amber-400 font-normal">({quickVal} total)</span>
-                          </button>
-                        ))}
+                        {[minBidRequired, minBidRequired + 10, minBidRequired + 25, minBidRequired + 50].map((quickVal) => {
+                          const hasBalance = user && user.points_balance >= quickVal;
+                          return (
+                            <button
+                              key={quickVal}
+                              onClick={() => handlePlaceBid(quickVal)}
+                              disabled={submittingBid || !hasBalance}
+                              className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                                hasBalance
+                                  ? 'bg-slate-800 hover:bg-slate-700 active:scale-95 border-slate-700 text-white'
+                                  : 'bg-slate-900/60 border-slate-800 text-slate-600 opacity-40 cursor-not-allowed'
+                              }`}
+                              title={hasBalance ? `Dar lance de ${quickVal} pontos` : 'Saldo insuficiente em carteira'}
+                            >
+                              <span>+{quickVal - (activeItem.current_bid || 0)} pts</span>
+                              <span className={`text-[10px] font-normal ${hasBalance ? 'text-amber-400' : 'text-slate-600'}`}>
+                                ({quickVal} total)
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
 
                       {/* Lance Personalizado */}
@@ -684,6 +711,7 @@ export default function AuctionPage() {
                           <input
                             type="number"
                             min={minBidRequired}
+                            max={user ? user.points_balance : undefined}
                             step={activeItem.bid_step || 5}
                             value={bidAmountInput}
                             onChange={(e) => setBidAmountInput(e.target.value)}
@@ -697,8 +725,13 @@ export default function AuctionPage() {
 
                         <button
                           onClick={() => handlePlaceBid()}
-                          disabled={submittingBid || !bidAmountInput}
-                          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition disabled:opacity-50 shrink-0"
+                          disabled={
+                            submittingBid ||
+                            !bidAmountInput ||
+                            (user && parseInt(bidAmountInput, 10) > user.points_balance) ||
+                            parseInt(bidAmountInput, 10) < minBidRequired
+                          }
+                          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                         >
                           {submittingBid ? 'Enviando...' : 'Confirmar Lance'}
                         </button>

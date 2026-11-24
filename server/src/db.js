@@ -175,7 +175,7 @@ function initDatabase() {
     { key: 'reset_keep_auction_points', value: 'true' },
     { key: 'director_registration_code', value: 'DIRETORIA2026' },
     { key: 'superadmin_registration_code', value: 'PASTOR2026' },
-    { key: 'require_points_for_bids', value: 'false' }, // 'false' = lances livres sem trava de saldo; 'true' = exige saldo em carteira
+    { key: 'require_points_for_bids', value: 'true' }, // 'true' = exige saldo em carteira; 'false' = lances livres sem trava de saldo
     { key: 'enable_points_system', value: 'true' }, // 'true' = pontuação ativa; 'false' = modo simplificado
     { key: 'club_name', value: 'Clube de Desbravadores Albatroz' },
     { key: 'timezone', value: 'America/Sao_Paulo' }
