@@ -15,5 +15,12 @@
     "reset-db": "cd server && npm run reset-db",
     "open:android": "cd client && npx cap open android",
     "build:client": "cd client && npm run build && npx cap sync android"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.8.1"
   }
 }
