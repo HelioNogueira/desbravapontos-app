@@ -13,42 +13,6 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-// Avatares estilizados pré-definidos para o Clube de Desbravadores
-const PRESET_AVATARS = [
-  {
-    name: 'Desbravador 1',
-    url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Desbravadora 1',
-    url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Desbravador 2',
-    url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Desbravadora 2',
-    url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Aventureiro 1',
-    url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Aventureira 1',
-    url: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Líder / Diretor',
-    url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&auto=format&fit=crop&q=80'
-  },
-  {
-    name: 'Líder / Diretora',
-    url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80'
-  }
-];
-
 export default function ProfileModal({ isOpen, onClose }) {
   const { user, updateProfile } = useAuth();
   const [selectedAvatar, setSelectedAvatar] = useState('');
@@ -214,8 +178,8 @@ export default function ProfileModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* Opção 1: Upload pelo Celular / Câmera */}
-          <div>
+          {/* Upload Direto da Galeria / Câmera */}
+          <div className="space-y-2">
             <input
               type="file"
               ref={fileInputRef}
@@ -227,57 +191,30 @@ export default function ProfileModal({ isOpen, onClose }) {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-bold transition active:scale-95"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition active:scale-95"
             >
               <Upload className="w-4 h-4" />
-              Tirar Foto ou Escolher da Galeria do Celular
+              Escolher Foto da Galeria do Celular ou Tirar Foto
             </button>
+
+            {selectedAvatar ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAvatar('');
+                  setCustomUrl('');
+                }}
+                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-red-400 transition text-center"
+              >
+                Remover foto atual (usar inicial do nome)
+              </button>
+            ) : null}
           </div>
 
-          {/* Opção 2: Avatares Pré-definidos do Clube */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-              Ou escolha um avatar temático:
-            </label>
-            <div className="grid grid-cols-4 gap-2.5">
-              {PRESET_AVATARS.map((preset, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setSelectedAvatar(preset.url);
-                    setCustomUrl('');
-                    setErrorMsg('');
-                  }}
-                  className={`relative rounded-2xl overflow-hidden aspect-square border-2 transition active:scale-90 ${
-                    selectedAvatar === preset.url
-                      ? 'border-amber-400 ring-2 ring-amber-400/40 shadow-lg'
-                      : 'border-slate-800 hover:border-slate-700 opacity-80 hover:opacity-100'
-                  }`}
-                >
-                  <img
-                    src={preset.url}
-                    alt={preset.name}
-                    className="w-full h-full object-cover"
-                  />
-                  {selectedAvatar === preset.url && (
-                    <div className="absolute inset-0 bg-amber-500/25 flex items-center justify-center">
-                      <div className="w-5 h-5 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center">
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      </div>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Opção 3: Link de Imagem Web */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-              Ou cole um link direto de imagem:
-            </label>
-            <div className="flex gap-2">
+          {/* Opção Secundária: Link de Imagem Web */}
+          <details className="text-xs text-slate-400 cursor-pointer pt-1">
+            <summary className="hover:text-slate-200">Ou colar link direto de imagem da internet</summary>
+            <div className="flex gap-2 mt-2">
               <div className="relative flex-1">
                 <LinkIcon className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
                 <input
@@ -296,21 +233,7 @@ export default function ProfileModal({ isOpen, onClose }) {
                 Aplicar
               </button>
             </div>
-          </div>
-
-          {/* Opção para limpar/remover foto */}
-          {selectedAvatar && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedAvatar('')}
-                className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 transition"
-              >
-                <Trash2 className="w-3 h-3" />
-                Remover foto
-              </button>
-            </div>
-          )}
+          </details>
         </div>
 
         {/* Rodapé de Ações */}

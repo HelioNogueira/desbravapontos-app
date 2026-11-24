@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +24,10 @@ import {
   TrendingUp,
   RefreshCw,
   Sparkles,
-  Package
+  Package,
+  Upload,
+  Camera,
+  X
 } from 'lucide-react';
 
 export default function AuctionPage() {
@@ -69,6 +72,46 @@ export default function AuctionPage() {
     starting_bid: 20,
     bid_step: 5
   });
+
+  const itemImageInputRef = useRef(null);
+
+  const handleItemImageFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecione um arquivo de imagem válido (JPG, PNG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.82);
+        setNewItemForm(prev => ({ ...prev, image_url: compressedBase64 }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Carregar lista de leilões
   const fetchAuctions = async () => {
@@ -913,15 +956,54 @@ export default function AuctionPage() {
                 />
               </div>
 
+              {/* Upload da Foto do Lote */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">URL da Imagem</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Foto do Lote</label>
                 <input
-                  type="url"
-                  value={newItemForm.image_url}
-                  onChange={(e) => setNewItemForm({ ...newItemForm, image_url: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
+                  type="file"
+                  ref={itemImageInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleItemImageFile}
                 />
+
+                {newItemForm.image_url ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-700 bg-slate-950 mb-2">
+                    <img
+                      src={newItemForm.image_url}
+                      alt="Prévia do lote"
+                      className="w-full h-36 object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewItemForm(prev => ({ ...prev, image_url: '' }))}
+                      className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-950/80 hover:bg-red-600 text-white transition shadow-md"
+                      title="Remover foto"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => itemImageInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-bold transition active:scale-95"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Escolher Foto da Galeria do Celular / PC
+                  </button>
+                )}
+
+                <details className="text-[11px] text-slate-400 mt-1 cursor-pointer">
+                  <summary className="hover:text-slate-200">Ou colar link/URL direto de imagem</summary>
+                  <input
+                    type="url"
+                    value={newItemForm.image_url}
+                    onChange={(e) => setNewItemForm({ ...newItemForm, image_url: e.target.value })}
+                    placeholder="https://..."
+                    className="w-full mt-1.5 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500"
+                  />
+                </details>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

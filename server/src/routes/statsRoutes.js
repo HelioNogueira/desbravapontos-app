@@ -57,7 +57,7 @@ router.get('/dashboard', authMiddleware, (req, res) => {
            COUNT(u.id) as members_count,
            COALESCE(SUM(u.points_balance), 0) as total_points
     FROM teams t
-    LEFT JOIN users u ON u.team_id = t.id AND u.active = 1
+    LEFT JOIN users u ON u.team_id = t.id AND u.active = 1 AND u.role = 'participant'
     GROUP BY t.id
     ORDER BY total_points DESC
   `).all();

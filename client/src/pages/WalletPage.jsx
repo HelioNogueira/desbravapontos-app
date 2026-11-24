@@ -15,7 +15,8 @@ import {
   Sparkles,
   Info,
   Camera,
-  User
+  User,
+  Crown
 } from 'lucide-react';
 
 export default function WalletPage({ onOpenProfile }) {
@@ -87,79 +88,96 @@ export default function WalletPage({ onOpenProfile }) {
       </div>
 
       {/* Cartões de Pontuação do Usuário */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Cartão 1: Saldo Disponível (Destaque Dourado) */}
-        <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/20 via-slate-900 to-slate-950 border border-amber-500/40 shadow-xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-              Saldo Disponível para Leilão
-            </span>
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/20">
-              <Coins className="w-5 h-5 animate-pulse" />
+      {user?.role === 'superadmin' ? (
+        <div className="p-6 rounded-3xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-purple-500/20 border border-purple-500/40 text-purple-400 flex items-center justify-center shrink-0">
+              <Crown className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider">Conta de Coordenação Geral</div>
+              <h2 className="text-lg font-black text-white mt-0.5">Pastor / Super Administrador</h2>
+              <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                Esta conta tem autoridade máxima sobre configurações, permissões, ciclos e leilões do Clube. Não acumula pontos nem concorre no ranking individual de desbravadores.
+              </p>
             </div>
           </div>
-
-          <div className="text-4xl sm:text-5xl font-black text-white tracking-tight">
-            {user?.points_balance?.toLocaleString('pt-BR') || 0}
-            <span className="text-base font-normal text-amber-400 ml-2">pts</span>
-          </div>
-
-          <p className="text-xs text-slate-300 mt-3 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Pontos acumulados sem data de expiração obrigatória.
-          </p>
         </div>
-
-        {/* Cartão 2: Posição no Ranking Individual */}
-        <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-md flex flex-col justify-between">
-          <div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Cartão 1: Saldo Disponível (Destaque Dourado) */}
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/20 via-slate-900 to-slate-950 border border-amber-500/40 shadow-xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
             <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Classificação Individual
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                Saldo Disponível para Leilão
               </span>
-              <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
-                <Award className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                <Coins className="w-5 h-5 animate-pulse" />
               </div>
             </div>
 
-            <div className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
-              #{rankingInfo?.rank || '-'}
-              <span className="text-xs font-semibold text-slate-400">no Clube Geral</span>
+            <div className="text-4xl sm:text-5xl font-black text-white tracking-tight">
+              {user?.points_balance?.toLocaleString('pt-BR') || 0}
+              <span className="text-base font-normal text-amber-400 ml-2">pts</span>
             </div>
+
+            <p className="text-xs text-slate-300 mt-3 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              Pontos acumulados sem data de expiração obrigatória.
+            </p>
           </div>
 
-          <p className="text-xs text-slate-400 mt-3">
-            Desbravador: <strong className="text-white">{user?.name}</strong>
-          </p>
-        </div>
+          {/* Cartão 2: Posição no Ranking Individual */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-md flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Classificação Individual
+                </span>
+                <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                  <Award className="w-5 h-5" />
+                </div>
+              </div>
 
-        {/* Cartão 3: Unidade / Equipe Vinculada */}
-        <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-md flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Sua Unidade
-              </span>
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <Shield className="w-5 h-5" />
+              <div className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
+                #{rankingInfo?.rank || '-'}
+                <span className="text-xs font-semibold text-slate-400">no Clube Geral</span>
               </div>
             </div>
 
-            <div className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-              <span
-                className="w-3.5 h-3.5 rounded-full shrink-0"
-                style={{ backgroundColor: user?.team_color || '#3b82f6' }}
-              />
-              {user?.team_name || 'Sem Unidade Vinculada'}
-            </div>
+            <p className="text-xs text-slate-400 mt-3">
+              Desbravador: <strong className="text-white">{user?.name}</strong>
+            </p>
           </div>
 
-          <p className="text-xs text-slate-400 mt-3">
-            Todos os seus pontos somam para o ranking da sua unidade!
-          </p>
+          {/* Cartão 3: Unidade / Equipe Vinculada */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-md flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Sua Unidade
+                </span>
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Shield className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                <span
+                  className="w-3.5 h-3.5 rounded-full shrink-0"
+                  style={{ backgroundColor: user?.team_color || '#3b82f6' }}
+                />
+                {user?.team_name || 'Sem Unidade Vinculada'}
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 mt-3">
+              Todos os seus pontos somam para o ranking da sua unidade!
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Extrato Detalhado de Movimentações */}
       <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">

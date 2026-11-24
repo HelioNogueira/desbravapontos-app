@@ -15,7 +15,8 @@ import {
   Users,
   Award,
   Sliders,
-  Camera
+  Camera,
+  Crown
 } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenProfile }) {
@@ -138,8 +139,8 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPro
               </span>
             </div>
 
-            {/* Saldo de Pontos do Usuário */}
-            {user ? (
+            {/* Saldo de Pontos do Usuário ou Distintivo de Liderança Geral */}
+            {user && user.role !== 'superadmin' ? (
               <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-amber-500/5 border border-amber-500/30 text-amber-400 shadow-sm">
                 <Coins className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 animate-bounce" />
                 <div className="text-right">
@@ -150,6 +151,12 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPro
                     {user.points_balance?.toLocaleString('pt-BR') || 0}
                   </span>
                 </div>
+              </div>
+            ) : user && user.role === 'superadmin' ? (
+              <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 shadow-sm" title="Super Administrador / Pastor">
+                <Crown className="w-3.5 h-3.5 text-purple-400" />
+                <span className="text-[11px] font-bold text-purple-200 hidden sm:inline">Pastor / Admin</span>
+                <span className="text-[11px] font-bold text-purple-200 sm:hidden">Admin</span>
               </div>
             ) : null}
 
