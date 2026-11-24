@@ -46,7 +46,7 @@ function seedDatabase() {
     const adminPass = hashPassword('admin123');
     const adminRes = db.prepare(`
       INSERT INTO users (name, email, password_hash, role, team_id, active, points_balance, avatar, created_at, updated_at)
-      VALUES (?, ?, ?, ?, NULL, 1, 0, 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&auto=format&fit=crop&q=80', ?, ?)
+      VALUES (?, ?, ?, ?, NULL, 1, 0, NULL, ?, ?)
     `).run('Pastor Lucas Silva (Super Admin)', 'admin@clube.org', adminPass, 'superadmin', now, now);
     const adminId = Number(adminRes.lastInsertRowid);
 
@@ -54,26 +54,26 @@ function seedDatabase() {
     const directorPass = hashPassword('diretor123');
     const dir1Res = db.prepare(`
       INSERT INTO users (name, email, password_hash, role, team_id, active, points_balance, avatar, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, 0, 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', ?, ?)
+      VALUES (?, ?, ?, ?, ?, 1, 0, NULL, ?, ?)
     `).run('Diretora Mariana Ramos', 'diretora@clube.org', directorPass, 'director', teamIds[0], now, now);
     const dir1Id = Number(dir1Res.lastInsertRowid);
 
     const dir2Res = db.prepare(`
       INSERT INTO users (name, email, password_hash, role, team_id, active, points_balance, avatar, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, 0, 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80', ?, ?)
+      VALUES (?, ?, ?, ?, ?, 1, 0, NULL, ?, ?)
     `).run('Instrutor Carlos Mendes', 'instrutor@clube.org', directorPass, 'director', teamIds[1], now, now);
 
     // C. Participantes (Desbravadores)
     const partPass = hashPassword('123456');
     const participants = [
-      { name: 'Gabriel Santos', email: 'gabriel@clube.org', team_id: teamIds[0], points: 480, avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Sofia Oliveira', email: 'sofia@clube.org', team_id: teamIds[0], points: 520, avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Pedro Henrique', email: 'pedro@clube.org', team_id: teamIds[1], points: 390, avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Beatriz Lima', email: 'beatriz@clube.org', team_id: teamIds[1], points: 410, avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Lucas Ferreira', email: 'lucas@clube.org', team_id: teamIds[2], points: 610, avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Laura Alcantara', email: 'laura@clube.org', team_id: teamIds[2], points: 590, avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Matheus Costa', email: 'matheus@clube.org', team_id: teamIds[3], points: 320, avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=120&auto=format&fit=crop&q=80' },
-      { name: 'Isabela Ribeiro', email: 'isabela@clube.org', team_id: teamIds[3], points: 350, avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=120&auto=format&fit=crop&q=80' }
+      { name: 'Gabriel Santos', email: 'gabriel@clube.org', team_id: teamIds[0], points: 480, avatar: null },
+      { name: 'Sofia Oliveira', email: 'sofia@clube.org', team_id: teamIds[0], points: 520, avatar: null },
+      { name: 'Pedro Henrique', email: 'pedro@clube.org', team_id: teamIds[1], points: 390, avatar: null },
+      { name: 'Beatriz Lima', email: 'beatriz@clube.org', team_id: teamIds[1], points: 410, avatar: null },
+      { name: 'Lucas Ferreira', email: 'lucas@clube.org', team_id: teamIds[2], points: 610, avatar: null },
+      { name: 'Laura Alcantara', email: 'laura@clube.org', team_id: teamIds[2], points: 590, avatar: null },
+      { name: 'Matheus Costa', email: 'matheus@clube.org', team_id: teamIds[3], points: 320, avatar: null },
+      { name: 'Isabela Ribeiro', email: 'isabela@clube.org', team_id: teamIds[3], points: 350, avatar: null }
     ];
 
     const userInsert = db.prepare(`

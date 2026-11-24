@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import Avatar from '../components/Avatar';
 import {
   Sliders, Shield, Trash2, AlertTriangle, CheckCircle2, Lock,
   Users, RotateCcw, History, Settings, Database, PlusCircle,
@@ -292,10 +293,10 @@ export default function AdminPage() {
                     <tr key={u.id} className="hover:bg-slate-850/40 transition">
                       <td className="py-2.5 px-3">
                         <div className="font-bold text-white flex items-center gap-2">
-                          <img
-                            src={u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&auto=format&fit=crop&q=80'}
-                            alt=""
-                            className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0"
+                          <Avatar
+                            src={u.avatar}
+                            name={u.name}
+                            size="sm"
                           />
                           <div>
                             <div>{u.name}</div>

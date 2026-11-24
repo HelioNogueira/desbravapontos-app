@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
+import Avatar from '../components/Avatar';
 import {
   Users,
   Shield,
@@ -354,10 +355,10 @@ export default function DashboardPage({ onNavigate }) {
                     }`}>
                       {part.rank}
                     </span>
-                    <img
-                      src={part.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&auto=format&fit=crop&q=80'}
-                      alt={part.name}
-                      className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                    <Avatar
+                      src={part.avatar}
+                      name={part.name}
+                      size="sm"
                     />
                     <div>
                       <div className="text-xs font-bold text-white">{part.name}</div>

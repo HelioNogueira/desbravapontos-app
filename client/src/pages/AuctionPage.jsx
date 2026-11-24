@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import Avatar from '../components/Avatar';
 import {
   Gavel,
   Clock,
@@ -22,7 +23,8 @@ import {
   ArrowRight,
   TrendingUp,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Package
 } from 'lucide-react';
 
 export default function AuctionPage() {
@@ -563,10 +565,11 @@ export default function AuctionPage() {
                                 {activeItem.winner_team_name || 'Individual'}
                               </div>
                             </div>
-                            <img
-                              src={activeItem.winner_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&auto=format&fit=crop&q=80'}
-                              alt=""
-                              className="w-9 h-9 rounded-full object-cover border-2 border-amber-500 shadow-md"
+                            <Avatar
+                              src={activeItem.winner_avatar}
+                              name={activeItem.winner_name}
+                              size="md"
+                              className="border-2 border-amber-500 shadow-md"
                             />
                           </div>
                         ) : (
@@ -672,8 +675,27 @@ export default function AuctionPage() {
                   )}
                 </div>
               ) : (
-                <div className="p-8 text-center text-slate-400 bg-slate-900 rounded-3xl border border-slate-800">
-                  Nenhum lote cadastrado para este leilão.
+                <div className="p-8 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+                    <Package className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Nenhum lote aberto para lances ainda</h3>
+                    <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto">
+                      {canManageAuction
+                        ? 'Para que os desbravadores possam disputar lances ao vivo, adicione ao menos um lote/item (ex: Barraca, Lanterna, Troféu, Cantil, etc.).'
+                        : 'A diretoria abriu a rodada de leilão, mas os lotes ainda estão sendo cadastrados. Assim que um lote for liberado, os botões de lance aparecerão aqui!'}
+                    </p>
+                  </div>
+                  {canManageAuction && (
+                    <button
+                      onClick={() => setShowAddItemModal(true)}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-amber-500/20 transition active:scale-95"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      Cadastrar Primeiro Lote deste Leilão
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -684,34 +706,40 @@ export default function AuctionPage() {
                   <span className="text-xs text-slate-500 font-normal">({auctionData.items?.length || 0} itens)</span>
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {auctionData.items?.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => setActiveItemId(item.id)}
-                      className={`p-3 rounded-2xl border text-left transition flex items-center gap-3 ${
-                        activeItemId === item.id
-                          ? 'bg-amber-500/10 border-amber-500/50 shadow-md shadow-amber-500/10'
-                          : 'bg-slate-850/60 border-slate-800 hover:bg-slate-800/80'
-                      }`}
-                    >
-                      <img
-                        src={item.image_url || 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=200&auto=format&fit=crop&q=80'}
-                        alt=""
-                        className="w-14 h-14 rounded-xl object-cover border border-slate-800 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-white truncate">{item.title}</div>
-                        <div className="text-[11px] text-amber-400 font-extrabold mt-0.5">
-                          {item.current_bid} pts
+                {(!auctionData.items || auctionData.items.length === 0) ? (
+                  <div className="p-6 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                    Nenhum item cadastrado nesta rodada de leilão.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {auctionData.items?.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveItemId(item.id)}
+                        className={`p-3 rounded-2xl border text-left transition flex items-center gap-3 ${
+                          activeItemId === item.id
+                            ? 'bg-amber-500/10 border-amber-500/50 shadow-md shadow-amber-500/10'
+                            : 'bg-slate-850/60 border-slate-800 hover:bg-slate-800/80'
+                        }`}
+                      >
+                        <img
+                          src={item.image_url || 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=200&auto=format&fit=crop&q=80'}
+                          alt=""
+                          className="w-14 h-14 rounded-xl object-cover border border-slate-800 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-white truncate">{item.title}</div>
+                          <div className="text-[11px] text-amber-400 font-extrabold mt-0.5">
+                            {item.current_bid} pts
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {item.winner_name ? `Líder: ${item.winner_name}` : 'Sem lances'}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          {item.winner_name ? `Líder: ${item.winner_name}` : 'Sem lances'}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -738,10 +766,10 @@ export default function AuctionPage() {
                       className="p-3 rounded-xl bg-slate-850/80 border border-slate-800 flex items-center justify-between gap-2 animate-in fade-in"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <img
-                          src={b.user_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&auto=format&fit=crop&q=80'}
-                          alt=""
-                          className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0"
+                        <Avatar
+                          src={b.user_avatar}
+                          name={b.user_name}
+                          size="sm"
                         />
                         <div className="min-w-0">
                           <div className="text-xs font-bold text-slate-200 truncate">

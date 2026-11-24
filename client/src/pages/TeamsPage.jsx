@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import Avatar from '../components/Avatar';
 import {
   Shield,
   Users,
@@ -233,10 +234,10 @@ export default function TeamsPage() {
                   className="p-3.5 rounded-2xl bg-slate-850/80 border border-slate-800 flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={m.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&auto=format&fit=crop&q=80'}
-                      alt=""
-                      className="w-9 h-9 rounded-full object-cover border border-slate-700 shrink-0"
+                    <Avatar
+                      src={m.avatar}
+                      name={m.name}
+                      size="md"
                     />
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-white truncate">{m.name}</div>
