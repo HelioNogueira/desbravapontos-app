@@ -20,6 +20,14 @@ function AppContent() {
   const [showLogin, setShowLogin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
+  // Se não está logado, abrir modal de login com segurança (Hook sempre no topo!)
+  useEffect(() => {
+    if (!user && !loading) {
+      const timer = setTimeout(() => setShowLogin(true), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [user, loading]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-950">
@@ -34,14 +42,6 @@ function AppContent() {
       </div>
     );
   }
-
-  // Se não está logado, abrir modal de login com segurança
-  useEffect(() => {
-    if (!user && !loading) {
-      const timer = setTimeout(() => setShowLogin(true), 300);
-      return () => clearTimeout(timer);
-    }
-  }, [user, loading]);
 
   const handleNavigate = (tab) => {
     setActiveTab(tab);
