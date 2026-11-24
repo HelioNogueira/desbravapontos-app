@@ -90,7 +90,7 @@ if (fs.existsSync(clientDistPath)) {
 }
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
   console.log(`⚔️  DESBRAVAPONTOS & LEILÃO VIRTUAL - SERVIDOR ATIVO  ⚔️`);
   console.log(`   Porta: http://localhost:${PORT}`);

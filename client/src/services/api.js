@@ -15,7 +15,7 @@ export function getBackendBaseUrl() {
     ));
 
   if (isCapacitorNative) {
-    return 'https://completion-impossible-heavy-void.trycloudflare.com';
+    return 'https://desbravapontos.onrender.com';
   }
 
   // No navegador web usa URL relativa (/api)
