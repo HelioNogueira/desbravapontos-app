@@ -30,6 +30,8 @@ export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('desbravapontos_token');
   const headers = {
     'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
     ...(options.headers || {})
   };
 
@@ -39,6 +41,7 @@ export async function apiRequest(endpoint, options = {}) {
 
   try {
     const response = await fetch(`${getApiBase()}${endpoint}`, {
+      cache: 'no-store',
       ...options,
       headers
     });

@@ -10,6 +10,7 @@ db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
   PRAGMA synchronous = NORMAL;
+  PRAGMA wal_autocheckpoint = 10;
 `);
 
 function initDatabase() {

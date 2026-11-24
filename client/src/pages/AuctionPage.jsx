@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 
 export default function AuctionPage() {
-  const { user, isSuperAdmin, isDirector, refreshUser } = useAuth();
+  const { user, isSuperAdmin, isDirector, refreshUser, updateUserBalance } = useAuth();
   const { socket, addNotification } = useSocket();
 
   const [auctions, setAuctions] = useState([]);
@@ -274,6 +274,9 @@ export default function AuctionPage() {
       const res = await api.placeBid(selectedAuctionId, activeItem.id, amount, isTeamBid);
       setBidSuccess(`Lance de ${amount} pts registrado com sucesso!`);
       setBidAmountInput('');
+      if (res.bid?.newBalance !== undefined) {
+        updateUserBalance(res.bid.newBalance);
+      }
       fetchAuctionDetails(selectedAuctionId);
       refreshUser();
     } catch (err) {
