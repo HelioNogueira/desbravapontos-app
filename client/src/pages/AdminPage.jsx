@@ -484,6 +484,7 @@ export default function AdminPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               { key: 'club_name', label: 'Nome do Clube de Desbravadores', type: 'text' },
+              { key: 'google_client_id', label: 'Google Client ID (Login com Google)', type: 'text' },
               { key: 'timezone', label: 'Fuso Horário', type: 'text' },
               { key: 'director_registration_code', label: 'Código de Cadastro da Diretoria', type: 'text' },
               { key: 'superadmin_registration_code', label: 'Chave Mestra de Cadastro do Pastor', type: 'text' },

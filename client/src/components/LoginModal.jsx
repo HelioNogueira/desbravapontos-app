@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import Avatar from './Avatar';
 import {
   Shield,
   Lock,
@@ -14,17 +15,30 @@ import {
   CheckCircle2,
   Users,
   Compass,
-  Crown
+  Crown,
+  ChevronLeft
 } from 'lucide-react';
 
 export default function LoginModal({ isOpen, onClose }) {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
 
-  const [tab, setTab] = useState('login'); // 'login' ou 'register'
+  const [tab, setTab] = useState('login'); // 'login', 'register' ou 'complete_google'
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [teams, setTeams] = useState([]);
+
+  // Google Sign-In States
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleCredential, setGoogleCredential] = useState('');
+  const [googleData, setGoogleData] = useState(null);
+  const [googleFirstName, setGoogleFirstName] = useState('');
+  const [googleLastName, setGoogleLastName] = useState('');
+  const [googleTeamId, setGoogleTeamId] = useState('');
+  const [googleClubRole, setGoogleClubRole] = useState('Desbravador');
+  const [googleRole, setGoogleRole] = useState('participant');
+  const [googleRegCode, setGoogleRegCode] = useState('');
+  const googleBtnRef = useRef(null);
 
   // Form de Login
   const [loginEmail, setLoginEmail] = useState('');
@@ -39,7 +53,7 @@ export default function LoginModal({ isOpen, onClose }) {
   const [regClubRole, setRegClubRole] = useState('');
   const [regCode, setRegCode] = useState('');
 
-  // Carregar unidades públicas para o formulário de cadastro
+  // Carregar unidades públicas para o formulário de cadastro e Google Client ID
   useEffect(() => {
     if (isOpen) {
       api.getPublicTeams()
@@ -48,10 +62,126 @@ export default function LoginModal({ isOpen, onClose }) {
           if (res.teams?.length > 0 && !regTeamId) {
             setRegTeamId(res.teams[0].id);
           }
+          if (res.teams?.length > 0 && !googleTeamId) {
+            setGoogleTeamId(res.teams[0].id);
+          }
+        })
+        .catch(() => {});
+
+      api.getGoogleClientId()
+        .then(res => {
+          if (res.clientId) setGoogleClientId(res.clientId);
         })
         .catch(() => {});
     }
   }, [isOpen]);
+
+  // Carregar script do Google Identity Services
+  useEffect(() => {
+    if (!document.getElementById('google-gsi-client')) {
+      const script = document.createElement('script');
+      script.id = 'google-gsi-client';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  // Resposta da credencial do Google
+  const handleGoogleCredentialResponse = async (response) => {
+    if (!response?.credential) return;
+    setError('');
+    setSuccess('');
+    setLoading(true);
+
+    try {
+      const res = await loginWithGoogle({ credential: response.credential });
+      if (res.needProfileCompletion) {
+        setGoogleCredential(response.credential);
+        setGoogleData(res.googleData);
+        setGoogleFirstName(res.googleData?.suggestedFirstName || '');
+        setGoogleLastName(res.googleData?.suggestedLastName || '');
+        if (teams.length > 0 && !googleTeamId) {
+          setGoogleTeamId(teams[0].id);
+        }
+        setTab('complete_google');
+      } else if (res.token && res.user) {
+        setSuccess(`Bem-vindo(a) ao Clube, ${res.user.name}!`);
+        setTimeout(() => {
+          onClose();
+        }, 800);
+      }
+    } catch (err) {
+      setError(err.message || 'Erro ao autenticar com o Google.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Inicializar Google Sign-In button quando o modal abrir
+  useEffect(() => {
+    if (isOpen && googleClientId && window.google?.accounts?.id && (tab === 'login' || tab === 'register')) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: handleGoogleCredentialResponse,
+          auto_select: false
+        });
+
+        if (googleBtnRef.current) {
+          googleBtnRef.current.innerHTML = '';
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            theme: 'filled_blue',
+            size: 'large',
+            shape: 'pill',
+            text: tab === 'register' ? 'signup_with' : 'signin_with',
+            logo_alignment: 'left',
+            width: 280
+          });
+        }
+      } catch (e) {
+        console.warn('Erro ao inicializar botão do Google:', e);
+      }
+    }
+  }, [isOpen, googleClientId, tab]);
+
+  // Concluir cadastro com dados customizados do Google (Primeiro Nome e Sobrenome reais)
+  const handleCompleteGoogleSubmit = async (e) => {
+    e.preventDefault();
+    if (!googleFirstName.trim() || !googleLastName.trim()) {
+      setError('Por favor preencha seu Primeiro Nome e seu Sobrenome.');
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+    setLoading(true);
+
+    try {
+      const res = await loginWithGoogle({
+        credential: googleCredential,
+        firstName: googleFirstName.trim(),
+        lastName: googleLastName.trim(),
+        team_id: googleRole === 'superadmin' ? null : (googleTeamId ? Number(googleTeamId) : null),
+        club_role: googleClubRole || (
+          googleRole === 'superadmin' ? 'Pastor / Diretor Geral' :
+          googleRole === 'director' ? 'Membro da Diretoria' : 'Desbravador'
+        ),
+        role: googleRole,
+        registration_code: googleRegCode
+      });
+
+      setSuccess(`Cadastro finalizado! Bem-vindo(a), ${res.user?.name || googleFirstName}!`);
+      setTimeout(() => {
+        onClose();
+      }, 900);
+    } catch (err) {
+      setError(err.message || 'Erro ao concluir cadastro com o Google.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -117,31 +247,46 @@ export default function LoginModal({ isOpen, onClose }) {
           <p className="text-[11px] text-slate-400 mt-0.5">Clube de Desbravadores Oficial</p>
         </div>
 
-        {/* Abas: Entrar vs Criar Conta */}
-        <div className="flex p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-5">
-          <button
-            type="button"
-            onClick={() => { setTab('login'); setError(''); setSuccess(''); }}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
-              tab === 'login'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Já tenho conta
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTab('register'); setError(''); setSuccess(''); }}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
-              tab === 'register'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Cadastrar-se
-          </button>
-        </div>
+        {/* Abas ou Cabeçalho de Conclusão do Google */}
+        {tab === 'complete_google' ? (
+          <div className="flex items-center justify-between pb-2 mb-4 border-b border-slate-800">
+            <button
+              type="button"
+              onClick={() => { setTab('login'); setError(''); }}
+              className="text-xs font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition"
+            >
+              <ChevronLeft className="w-4 h-4" /> Voltar
+            </button>
+            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+              Concluir Cadastro
+            </span>
+          </div>
+        ) : (
+          <div className="flex p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-5">
+            <button
+              type="button"
+              onClick={() => { setTab('login'); setError(''); setSuccess(''); }}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
+                tab === 'login'
+                  ? 'bg-amber-500 text-slate-950 shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Já tenho conta
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTab('register'); setError(''); setSuccess(''); }}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
+                tab === 'register'
+                  ? 'bg-amber-500 text-slate-950 shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Cadastrar-se
+            </button>
+          </div>
+        )}
 
         {/* Alertas */}
         {error && (
@@ -158,8 +303,157 @@ export default function LoginModal({ isOpen, onClose }) {
           </div>
         )}
 
-        {/* ABA 1: LOGIN */}
-        {tab === 'login' ? (
+        {/* SE ESTIVER NA ETAPA DE COMPLETAR CADASTRO DO GOOGLE */}
+        {tab === 'complete_google' ? (
+          <div className="space-y-4 animate-in fade-in">
+            {/* Prévia dos dados da conta Google */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center gap-3">
+              <Avatar
+                src={googleData?.picture}
+                name={googleFirstName || 'Desbravador'}
+                size="md"
+                className="ring-2 ring-amber-500/30 shrink-0"
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>Conta Google Conectada</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                </div>
+                <div className="text-[11px] text-slate-400 truncate">{googleData?.email}</div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
+              <span className="font-bold">✨ Nome Oficial no Clube:</span>
+              <p className="text-[11px] text-blue-200/80 mt-0.5">
+                Para não usar o apelido do seu e-mail, digite seu <strong>Primeiro Nome</strong> e <strong>Sobrenome</strong> como devem aparecer nos leilões e no ranking:
+              </p>
+            </div>
+
+            <form onSubmit={handleCompleteGoogleSubmit} className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    Primeiro Nome *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={googleFirstName}
+                    onChange={(e) => setGoogleFirstName(e.target.value)}
+                    placeholder="Ex: Lucas"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    Sobrenome *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={googleLastName}
+                    onChange={(e) => setGoogleLastName(e.target.value)}
+                    placeholder="Ex: Silveira"
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Nível da Conta Google */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Função / Nível no Clube
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGoogleRole('participant')}
+                    className={`py-2 px-1 rounded-xl text-center text-xs font-bold border transition ${
+                      googleRole === 'participant'
+                        ? 'bg-blue-500/20 border-blue-500 text-blue-300 shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Desbravador
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGoogleRole('director')}
+                    className={`py-2 px-1 rounded-xl text-center text-xs font-bold border transition ${
+                      googleRole === 'director'
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Diretoria
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGoogleRole('superadmin')}
+                    className={`py-2 px-1 rounded-xl text-center text-xs font-bold border transition ${
+                      googleRole === 'superadmin'
+                        ? 'bg-red-500/20 border-red-500 text-red-300 shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Pastor / Geral
+                  </button>
+                </div>
+              </div>
+
+              {/* Seleção de Unidade */}
+              {googleRole !== 'superadmin' && (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                    Sua Unidade de Desbravadores *
+                  </label>
+                  <select
+                    value={googleTeamId}
+                    onChange={(e) => setGoogleTeamId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Código se for Diretoria ou Superadmin */}
+              {(googleRole === 'director' || googleRole === 'superadmin') && (
+                <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-amber-400">
+                    Código de Autorização Obrigatório
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={googleRegCode}
+                    onChange={(e) => setGoogleRegCode(e.target.value)}
+                    placeholder="Digite o código da Diretoria ou Pastor..."
+                    className="w-full px-3 py-2 bg-slate-900 border border-amber-500/40 rounded-xl text-xs text-white focus:outline-none font-mono"
+                  />
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 mt-2"
+              >
+                {loading ? 'Finalizando...' : 'Concluir Cadastro e Entrar'}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div>
+            {/* ABA 1: LOGIN */}
+            {tab === 'login' ? (
           <div>
             <form onSubmit={handleLoginSubmit} className="space-y-3.5">
               <div>
@@ -393,6 +687,40 @@ export default function LoginModal({ isOpen, onClose }) {
             </button>
           </form>
         )}
+
+        {/* SEPARADOR OU */}
+        <div className="relative my-4 flex items-center justify-center">
+          <div className="border-t border-slate-800 w-full" />
+          <span className="bg-slate-900 px-3 text-[10px] uppercase font-bold text-slate-500">ou</span>
+          <div className="border-t border-slate-800 w-full" />
+        </div>
+
+        {/* BOTÃO OFICIAL GOOGLE SIGN-IN */}
+        <div className="flex flex-col items-center gap-2">
+          <div ref={googleBtnRef} className="w-full flex justify-center min-h-[44px]" />
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!googleClientId) {
+                setError('Para ativar o Login com Google, informe o Google Client ID nas Configurações de Administrador.');
+              } else if (window.google?.accounts?.id) {
+                window.google.accounts.id.prompt();
+              }
+            }}
+            className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 rounded-xl text-xs sm:text-sm font-bold text-white transition flex items-center justify-center gap-2.5 shadow-sm active:scale-95"
+          >
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            <span>{tab === 'register' ? 'Cadastrar com o Google' : 'Continuar com o Google'}</span>
+          </button>
+        </div>
+      </div>
+    )}
 
         {/* Rodapé com configuração do Servidor (Útil para APK / Rede Local) */}
         <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">

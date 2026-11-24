@@ -17,7 +17,8 @@ export default function ProfileModal({ isOpen, onClose }) {
   const { user, updateProfile } = useAuth();
   const [selectedAvatar, setSelectedAvatar] = useState('');
   const [customUrl, setCustomUrl] = useState('');
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -26,7 +27,9 @@ export default function ProfileModal({ isOpen, onClose }) {
   useEffect(() => {
     if (user && isOpen) {
       setSelectedAvatar(user.avatar || '');
-      setName(user.name || '');
+      const parts = (user.name || '').trim().split(' ');
+      setFirstName(parts[0] || '');
+      setLastName(parts.slice(1).join(' ') || '');
       setCustomUrl('');
       setSuccessMsg('');
       setErrorMsg('');
@@ -84,17 +87,19 @@ export default function ProfileModal({ isOpen, onClose }) {
     setErrorMsg('');
     setSuccessMsg('');
 
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim() || user.name;
+
     try {
       await updateProfile({
         avatar: selectedAvatar,
-        name: name.trim() || user.name
+        name: fullName
       });
-      setSuccessMsg('Foto de perfil atualizada com sucesso!');
+      setSuccessMsg('Perfil atualizado com sucesso!');
       setTimeout(() => {
         onClose();
       }, 1200);
     } catch (err) {
-      setErrorMsg(err.message || 'Erro ao atualizar foto de perfil.');
+      setErrorMsg(err.message || 'Erro ao atualizar dados do perfil.');
     } finally {
       setLoading(false);
     }
@@ -169,11 +174,52 @@ export default function ProfileModal({ isOpen, onClose }) {
             </div>
 
             <div className="text-center">
-              <div className="font-extrabold text-sm text-white">{user.name}</div>
+              <div className="font-extrabold text-sm text-white">
+                {firstName || lastName ? `${firstName} ${lastName}`.trim() : user.name}
+              </div>
               <div className="text-[11px] text-amber-400 font-semibold flex items-center justify-center gap-1.5 mt-0.5">
                 <Shield className="w-3 h-3" />
                 <span>{user.club_role || (user.role === 'superadmin' ? 'Pastor / Diretor Geral' : user.role === 'director' ? 'Diretoria' : 'Desbravador')}</span>
                 {user.team_name && <span>• Unidade {user.team_name}</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Edição de Nome e Sobrenome */}
+          <div className="space-y-3 p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+              <User className="w-4 h-4 text-amber-400" />
+              <span>Nome e Sobrenome no Clube</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Como seu nome deve aparecer nos leilões, nos lances e no ranking das unidades:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Primeiro Nome *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Ex: João"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500 font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Sobrenome *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Ex: da Silva"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500 font-medium"
+                />
               </div>
             </div>
           </div>
@@ -256,7 +302,7 @@ export default function ProfileModal({ isOpen, onClose }) {
             ) : (
               <>
                 <Check className="w-4 h-4 stroke-[3]" />
-                Salvar Foto
+                Salvar Perfil
               </>
             )}
           </button>
