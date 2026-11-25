@@ -29,14 +29,25 @@ export default function MasterPage() {
   const [form, setForm] = useState({
     name: '',
     join_code: '',
-    plan_name: 'Mensal',
-    monthly_price: '39.90',
+    plan_name: 'Pequeno (até 20 membros)',
+    monthly_price: '30.00',
     days: '30',
-    max_members: '100',
+    max_members: '20',
     admin_name: '',
     admin_email: '',
     admin_password: ''
   });
+
+  const applyPlanPreset = (tier) => {
+    const presets = {
+      pequeno: { plan_name: 'Pequeno (até 20 membros)', monthly_price: '30.00', max_members: '20' },
+      medio: { plan_name: 'Médio (21 a 59 membros)', monthly_price: '50.00', max_members: '59' },
+      grande: { plan_name: 'Grande (60+ membros)', monthly_price: '70.00', max_members: '250' }
+    };
+    if (presets[tier]) {
+      setForm((prev) => ({ ...prev, ...presets[tier] }));
+    }
+  };
 
   const loadClubs = async () => {
     setLoading(true);
@@ -202,7 +213,20 @@ export default function MasterPage() {
       {/* Formulário de Criação Manual */}
       {showCreate && (
         <form onSubmit={handleCreateClub} className="p-5 sm:p-6 rounded-3xl bg-slate-900 border border-emerald-500/30 space-y-4 shadow-xl">
-          <h2 className="text-base font-black text-white">Cadastrar Clube Manualmente</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h2 className="text-base font-black text-white">Cadastrar Clube Manualmente</h2>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={() => applyPlanPreset('pequeno')} className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 border border-slate-700 text-[11px] font-bold text-emerald-300">
+                Pequeno (R$ 30 / 20m)
+              </button>
+              <button type="button" onClick={() => applyPlanPreset('medio')} className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 border border-slate-700 text-[11px] font-bold text-amber-300">
+                Médio (R$ 50 / 59m)
+              </button>
+              <button type="button" onClick={() => applyPlanPreset('grande')} className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 border border-slate-700 text-[11px] font-bold text-blue-300">
+                Grande (R$ 70 / 60+m)
+              </button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>

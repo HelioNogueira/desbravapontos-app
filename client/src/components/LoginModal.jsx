@@ -33,6 +33,7 @@ export default function LoginModal({ isOpen, onClose }) {
   // Form de Novo Clube (7 dias grátis)
   const [newClubName, setNewClubName] = useState('');
   const [newClubCode, setNewClubCode] = useState('');
+  const [newClubPlanTier, setNewClubPlanTier] = useState('pequeno');
   const [newClubAdminName, setNewClubAdminName] = useState('');
   const [newClubAdminEmail, setNewClubAdminEmail] = useState('');
   const [newClubAdminPassword, setNewClubAdminPassword] = useState('');
@@ -300,6 +301,7 @@ export default function LoginModal({ isOpen, onClose }) {
       const res = await registerClub({
         clubName: newClubName,
         joinCode: newClubCode,
+        planTier: newClubPlanTier,
         adminName: newClubAdminName,
         adminEmail: newClubAdminEmail,
         adminPassword: newClubAdminPassword
@@ -659,6 +661,35 @@ export default function LoginModal({ isOpen, onClose }) {
                 placeholder="Ex: AGUIAS2026 (gerado se ficar vazio)"
                 className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
               />
+            </div>
+
+            {/* Faixa de Tamanho do Clube */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">
+                Porte do Clube (após os 7 dias grátis)
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'pequeno', label: 'Pequeno', members: 'Até 20', price: 'R$ 30/mês' },
+                  { id: 'medio', label: 'Médio', members: '21 a 59', price: 'R$ 50/mês' },
+                  { id: 'grande', label: 'Grande', members: '60+', price: 'R$ 70/mês' }
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setNewClubPlanTier(p.id)}
+                    className={`p-2 rounded-xl border text-center transition ${
+                      newClubPlanTier === p.id
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                        : 'bg-slate-800/70 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="text-[11px] font-black">{p.label}</div>
+                    <div className="text-[9px] text-slate-400">{p.members} membros</div>
+                    <div className="text-[10px] font-bold text-amber-400 mt-0.5">{p.price}</div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>

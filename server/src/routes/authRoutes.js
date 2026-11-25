@@ -49,15 +49,24 @@ router.get('/club-by-code', (req, res) => {
 
 // POST /api/auth/register-club
 // Auto-cadastro de um novo Clube na plataforma (7 dias grátis de teste)
+const CLUB_PLANS = {
+  pequeno: { plan_name: 'Pequeno (até 20 membros)', monthly_price: 30.0, max_members: 20 },
+  medio: { plan_name: 'Médio (21 a 59 membros)', monthly_price: 50.0, max_members: 59 },
+  grande: { plan_name: 'Grande (60+ membros)', monthly_price: 70.0, max_members: 250 }
+};
+
 router.post('/register-club', async (req, res) => {
   const {
     clubName,
     joinCode,
+    planTier = 'pequeno',
     adminName,
     adminEmail,
     adminPassword,
     googleCredential
   } = req.body;
+
+  const selectedPlan = CLUB_PLANS[planTier] || CLUB_PLANS.pequeno;
 
   if (!clubName || !clubName.trim()) {
     return res.status(400).json({ error: 'Informe o nome do Clube de Desbravadores.' });
@@ -113,8 +122,19 @@ router.post('/register-club', async (req, res) => {
     const result = withTransaction(() => {
       const clubRes = db.prepare(`
         INSERT INTO clubs (name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members, owner_email, created_at, updated_at)
-        VALUES (?, ?, ?, 'trial', 'Teste 7 Dias', 39.90, ?, 100, ?, ?, ?)
-      `).run(clubName.trim(), slug, finalCode, trialExpires, resolvedEmail, nowIso, nowIso);
+        VALUES (?, ?, ?, 'trial', ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        clubName.trim(),
+        slug,
+        finalCode,
+        `Teste 7d — ${selectedPlan.plan_name}`,
+        selectedPlan.monthly_price,
+        trialExpires,
+        selectedPlan.max_members,
+        resolvedEmail,
+        nowIso,
+        nowIso
+      );
 
       const clubId = Number(clubRes.lastInsertRowid);
       initNewClubDefaults(clubId, clubName.trim());
