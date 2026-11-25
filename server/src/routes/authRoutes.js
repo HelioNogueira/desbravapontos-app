@@ -130,14 +130,11 @@ router.post('/google', async (req, res) => {
       });
     }
   } else if (role === 'superadmin') {
-    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
     const superadminCode = getSetting('superadmin_registration_code', 'PASTOR2026');
-    if (totalUsers > 0) {
-      if (!registration_code || registration_code.trim().toUpperCase() !== superadminCode.toUpperCase()) {
-        return res.status(403).json({
-          error: 'Chave mestra de Pastor / Super Administrador inválida.'
-        });
-      }
+    if (!registration_code || registration_code.trim().toUpperCase() !== superadminCode.toUpperCase()) {
+      return res.status(403).json({
+        error: 'Chave mestra de Pastor / Super Administrador inválida.'
+      });
     }
   }
 
