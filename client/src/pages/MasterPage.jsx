@@ -356,6 +356,10 @@ export default function MasterPage() {
                     <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[10px] font-bold flex items-center gap-1">
                       <Clock className="w-3 h-3" /> Vencido
                     </span>
+                  ) : club.inGracePeriod ? (
+                    <span className="px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 text-[10px] font-bold flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> Em Carência (Pix)
+                    </span>
                   ) : club.status === 'trial' ? (
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
                       Teste ({daysLeft}d restantes)

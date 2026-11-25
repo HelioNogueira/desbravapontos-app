@@ -20,6 +20,16 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLogin, setShowLogin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [pixCopied, setPixCopied] = useState(false);
+
+  const pixKey = club?.pixKey || '92994020715';
+  const whatsappNumber = club?.whatsapp || '5592994020715';
+
+  const handleCopyPix = () => {
+    navigator.clipboard?.writeText(pixKey).catch(() => {});
+    setPixCopied(true);
+    setTimeout(() => setPixCopied(false), 2500);
+  };
 
   // Se não está logado, abrir modal de login com segurança (Hook sempre no topo!)
   useEffect(() => {
@@ -82,6 +92,34 @@ function AppContent() {
         <InstallAppBanner />
         <NotificationToast />
 
+        {/* Banner de Aviso de Cobrança em Carência (não trava o app durante sexta/sábado ou dia de tolerância) */}
+        {user && club?.inGracePeriod && !isPlatformAdmin && (
+          <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+              <div className="text-amber-200 text-center sm:text-left">
+                <strong>Aviso de Renovação ({club.name}):</strong> O prazo do teste/mensalidade venceu, mas o app continua liberado temporariamente.
+                Renove via Pix (<strong className="text-white font-mono">{pixKey}</strong> — R$ {Number(club.monthly_price || 39.9).toFixed(2).replace('.', ',')}).
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleCopyPix}
+                  className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition"
+                >
+                  {pixCopied ? 'Pix Copiado!' : 'Copiar Pix'}
+                </button>
+                <a
+                  href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá! Segue o comprovante Pix de renovação do clube ${club.name} (${club.join_code}).`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold transition"
+                >
+                  Enviar Comprovante
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Conteúdo com espaçamento de segurança para a barra inferior mobile */}
         <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8">
           {user ? (
@@ -95,10 +133,32 @@ function AppContent() {
                 <div className="max-w-md space-y-2">
                   <h2 className="text-2xl font-black text-white">Assinatura do Clube Expirada</h2>
                   <p className="text-xs sm:text-sm text-slate-400">
-                    O acesso do clube <strong className="text-amber-400">{club?.name}</strong> está temporariamente suspenso ou com a mensalidade vencida.
-                    Peça à diretoria para entrar em contato com o suporte para renovar via Pix.
+                    O acesso do clube <strong className="text-amber-400">{club?.name}</strong> foi pausado após o período de carência.
+                    Para reativar por +30 dias, faça o Pix de <strong className="text-white">R$ {Number(club?.monthly_price || 39.9).toFixed(2).replace('.', ',')}</strong>:
                   </p>
                 </div>
+
+                <div className="w-full max-w-sm p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="text-[11px] uppercase font-bold text-slate-400">Chave Pix (Telefone)</div>
+                  <div className="text-lg font-mono font-black text-amber-400 select-all">{pixKey}</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCopyPix}
+                      className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition"
+                    >
+                      {pixCopied ? 'Pix Copiado!' : 'Copiar Chave Pix'}
+                    </button>
+                    <a
+                      href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá! Segue o comprovante Pix de renovação do clube ${club?.name || ''} (${club?.join_code || ''}).`)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center transition"
+                    >
+                      Enviar no WhatsApp
+                    </a>
+                  </div>
+                </div>
+
                 <button
                   onClick={logout}
                   className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 transition"

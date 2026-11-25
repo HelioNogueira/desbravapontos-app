@@ -28,11 +28,64 @@ function generateToken(user) {
   );
 }
 
+const PLATFORM_PIX_KEY = process.env.PLATFORM_PIX_KEY || '92994020715';
+const PLATFORM_WHATSAPP = process.env.PLATFORM_WHATSAPP || '5592994020715';
+
+function getSaoPauloDayOfWeek(date) {
+  try {
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      weekday: 'short'
+    }).format(date);
+    const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return map[weekday] ?? date.getUTCDay();
+  } catch (_) {
+    return date.getUTCDay();
+  }
+}
+
+function getGraceInfo(club) {
+  if (!club) {
+    return { isExpired: false, inGracePeriod: false, graceEndsAt: null };
+  }
+  if (club.status === 'suspended') {
+    return { isExpired: true, inGracePeriod: false, graceEndsAt: club.expires_at };
+  }
+  if (!club.expires_at) {
+    return { isExpired: false, inGracePeriod: false, graceEndsAt: null };
+  }
+
+  const nowMs = Date.now();
+  const expDate = new Date(club.expires_at);
+  const expMs = expDate.getTime();
+
+  if (nowMs <= expMs) {
+    return { isExpired: false, inGracePeriod: false, graceEndsAt: club.expires_at };
+  }
+
+  // Carência inteligente: nunca bloqueia na hora; se cair na Sexta ou Sábado, estende até passar o fim de semana
+  const day = getSaoPauloDayOfWeek(expDate);
+  let graceHours = 36; // ~1 dia e meio de tolerância padrão
+  if (day === 5) {
+    // Caiu na Sexta-feira -> libera Sexta, Sábado e Domingo (72h)
+    graceHours = 72;
+  } else if (day === 6) {
+    // Caiu no Sábado -> libera Sábado e Domingo (48h)
+    graceHours = 48;
+  }
+
+  const graceEndMs = expMs + graceHours * 3600 * 1000;
+  const graceEndsAt = new Date(graceEndMs).toISOString();
+
+  if (nowMs < graceEndMs) {
+    return { isExpired: false, inGracePeriod: true, graceEndsAt };
+  }
+
+  return { isExpired: true, inGracePeriod: false, graceEndsAt };
+}
+
 function isClubExpired(club) {
-  if (!club) return false;
-  if (club.status === 'suspended') return true;
-  if (club.expires_at && new Date(club.expires_at).getTime() < Date.now()) return true;
-  return false;
+  return getGraceInfo(club).isExpired;
 }
 
 function authMiddleware(req, res, next) {
@@ -59,9 +112,13 @@ function authMiddleware(req, res, next) {
       ? db.prepare('SELECT id, name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members FROM clubs WHERE id = ?').get(user.club_id)
       : null;
 
-    const expired = !user.is_platform_admin && isClubExpired(club);
+    const grace = !user.is_platform_admin ? getGraceInfo(club) : { isExpired: false, inGracePeriod: false, graceEndsAt: null };
     if (club) {
-      club.isExpired = expired;
+      club.isExpired = grace.isExpired;
+      club.inGracePeriod = grace.inGracePeriod;
+      club.graceEndsAt = grace.graceEndsAt;
+      club.pixKey = PLATFORM_PIX_KEY;
+      club.whatsapp = PLATFORM_WHATSAPP;
     }
 
     req.user = user;
@@ -70,7 +127,7 @@ function authMiddleware(req, res, next) {
     req.isPlatformAdmin = Boolean(user.is_platform_admin);
 
     // Permitir /api/auth/me mesmo com clube expirado para que o front exiba a tela de renovação
-    if (expired && !req.originalUrl.startsWith('/api/auth/me')) {
+    if (grace.isExpired && !req.originalUrl.startsWith('/api/auth/me')) {
       return res.status(402).json({
         error: 'A assinatura do seu clube expirou ou foi suspensa. Entre em contato com o suporte para renovar.',
         code: 'CLUB_SUBSCRIPTION_EXPIRED',
@@ -114,5 +171,6 @@ module.exports = {
   requireRole,
   requirePlatformAdmin,
   isClubExpired,
+  getGraceInfo,
   JWT_SECRET
 };

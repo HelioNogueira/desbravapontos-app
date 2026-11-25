@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db, withTransaction, initNewClubDefaults, logAudit } = require('../db');
-const { authMiddleware, requirePlatformAdmin, hashPassword, isClubExpired } = require('../auth');
+const { authMiddleware, requirePlatformAdmin, hashPassword, isClubExpired, getGraceInfo } = require('../auth');
 
 function makeSlug(name) {
   return String(name || 'clube')
@@ -24,10 +24,15 @@ router.get('/clubs', authMiddleware, requirePlatformAdmin, (req, res) => {
     ORDER BY c.id DESC
   `).all();
 
-  const enriched = clubs.map((c) => ({
-    ...c,
-    isExpired: isClubExpired(c)
-  }));
+  const enriched = clubs.map((c) => {
+    const grace = getGraceInfo(c);
+    return {
+      ...c,
+      isExpired: grace.isExpired,
+      inGracePeriod: grace.inGracePeriod,
+      graceEndsAt: grace.graceEndsAt
+    };
+  });
 
   const stats = {
     totalClubs: enriched.length,
