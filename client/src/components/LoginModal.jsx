@@ -964,31 +964,6 @@ export default function LoginModal({ isOpen, onClose }) {
         </div>
       </div>
     )}
-
-        {/* Rodapé com configuração do Servidor (Útil para APK / Rede Local) */}
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-          <span className="truncate max-w-[240px]">
-            Servidor: <strong className="text-amber-400 font-mono">{localStorage.getItem('desbravapontos_backend_url') || 'http://192.168.0.5:3001'}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              const current = localStorage.getItem('desbravapontos_backend_url') || 'http://192.168.0.5:3001';
-              const nextUrl = prompt('URL do Servidor (IP do computador na rede):', current);
-              if (nextUrl !== null) {
-                if (nextUrl.trim()) {
-                  localStorage.setItem('desbravapontos_backend_url', nextUrl.trim());
-                } else {
-                  localStorage.removeItem('desbravapontos_backend_url');
-                }
-                window.location.reload();
-              }
-            }}
-            className="text-amber-400 hover:text-amber-300 font-semibold underline transition ml-2 shrink-0"
-          >
-            Alterar IP
-          </button>
-        </div>
       </div>
     </div>
   );
