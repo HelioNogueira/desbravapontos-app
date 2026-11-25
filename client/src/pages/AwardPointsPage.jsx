@@ -191,6 +191,8 @@ export default function AwardPointsPage() {
     );
   };
 
+  const selectedUser = usersList.find((u) => Number(u.id) === Number(selectedUserId));
+
   return (
     <div className="space-y-6 pb-12 animate-in fade-in">
       {/* Header */}
