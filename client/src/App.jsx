@@ -7,6 +7,7 @@ import InstallAppBanner from './components/InstallAppBanner';
 import LoginModal from './components/LoginModal';
 import ProfileModal from './components/ProfileModal';
 import NotificationToast from './components/NotificationToast';
+import PixPaymentModal from './components/PixPaymentModal';
 import DashboardPage from './pages/DashboardPage';
 import AuctionPage from './pages/AuctionPage';
 import WalletPage from './pages/WalletPage';
@@ -20,6 +21,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLogin, setShowLogin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showPixModal, setShowPixModal] = useState(false);
   const [pixCopied, setPixCopied] = useState(false);
 
   const pixKey = club?.pixKey || '92994020715';
@@ -102,10 +104,10 @@ function AppContent() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={handleCopyPix}
+                  onClick={() => setShowPixModal(true)}
                   className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition"
                 >
-                  {pixCopied ? 'Pix Copiado!' : 'Copiar Pix'}
+                  Pagar com Pix (QR Code)
                 </button>
                 <a
                   href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá! Segue o comprovante Pix de renovação do clube ${club.name} (${club.join_code}).`)}`}
@@ -139,14 +141,19 @@ function AppContent() {
                 </div>
 
                 <div className="w-full max-w-sm p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-                  <div className="text-[11px] uppercase font-bold text-slate-400">Chave Pix (Telefone)</div>
-                  <div className="text-lg font-mono font-black text-amber-400 select-all">{pixKey}</div>
+                  <div className="text-[11px] uppercase font-bold text-slate-400">Pagamento via Pix (QR Code ou Copia e Cola)</div>
+                  <button
+                    onClick={() => setShowPixModal(true)}
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition"
+                  >
+                    Abrir QR Code & Pix Copia e Cola
+                  </button>
                   <div className="flex gap-2">
                     <button
                       onClick={handleCopyPix}
-                      className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition"
+                      className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition"
                     >
-                      {pixCopied ? 'Pix Copiado!' : 'Copiar Chave Pix'}
+                      {pixCopied ? 'Chave Copiada!' : `Copiar Chave (${pixKey})`}
                     </button>
                     <a
                       href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá! Segue o comprovante Pix de renovação do clube ${club?.name || ''} (${club?.join_code || ''}).`)}`}
@@ -154,7 +161,7 @@ function AppContent() {
                       rel="noreferrer"
                       className="flex-1 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center transition"
                     >
-                      Enviar no WhatsApp
+                      WhatsApp
                     </a>
                   </div>
                 </div>
@@ -198,6 +205,13 @@ function AppContent() {
 
       <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} />
+      <PixPaymentModal
+        isOpen={showPixModal}
+        onClose={() => setShowPixModal(false)}
+        club={club}
+        pixKey={pixKey}
+        whatsappNumber={whatsappNumber}
+      />
     </div>
   );
 }
