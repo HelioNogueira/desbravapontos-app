@@ -19,6 +19,7 @@ const cycleRoutes = require('./routes/cycleRoutes');
 const resetRoutes = require('./routes/resetRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const auditRoutes = require('./routes/auditRoutes');
+const masterRoutes = require('./routes/masterRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -47,7 +48,13 @@ const io = new SocketIOServer(server, {
 });
 
 io.on('connection', (socket) => {
-  // Conexão de cliente
+  // Conexão de cliente: entra na sala do seu clube para isolar leilões e rankings em tempo real
+  socket.on('join_club', (clubId) => {
+    if (clubId) {
+      socket.join(`club_${clubId}`);
+    }
+  });
+
   socket.on('join_auction', (auctionId) => {
     socket.join(`auction_${auctionId}`);
   });
@@ -76,6 +83,7 @@ app.use('/api/cycles', cycleRoutes);
 app.use('/api/reset', resetRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/master', masterRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({

@@ -10,8 +10,9 @@ router.get('/history', authMiddleware, requireRole('superadmin'), (req, res) => 
     SELECT rh.*, u.name as actor_name, u.email as actor_email
     FROM reset_history rh
     LEFT JOIN users u ON rh.actor_id = u.id
+    WHERE rh.club_id = ?
     ORDER BY rh.id DESC
-  `).all();
+  `).all(req.clubId);
 
   return res.json({ history });
 });
@@ -48,9 +49,9 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
   try {
     const result = withTransaction(() => {
       // 2. Coletar dados para o SNAPSHOT antes da alteração (garante rollback e imutabilidade)
-      const currentUsersState = db.prepare('SELECT id, name, email, team_id, points_balance, role FROM users').all();
-      const currentTeamsState = db.prepare('SELECT id, name, collective_balance FROM teams').all();
-      const activeCycle = db.prepare('SELECT * FROM cycles WHERE is_active = 1').get();
+      const currentUsersState = db.prepare('SELECT id, name, email, team_id, points_balance, role FROM users WHERE club_id = ?').all(req.clubId);
+      const currentTeamsState = db.prepare('SELECT id, name, collective_balance FROM teams WHERE club_id = ?').all(req.clubId);
+      const activeCycle = db.prepare('SELECT * FROM cycles WHERE is_active = 1 AND club_id = ?').get(req.clubId);
 
       const snapshot = {
         timestamp: now,
@@ -67,16 +68,17 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
 
       if (reset_type === 'all_individual') {
         // Zerar todos os saldos individuais
-        const nonAdmins = db.prepare("SELECT id, points_balance, team_id FROM users WHERE role = 'participant' AND points_balance != 0").all();
+        const nonAdmins = db.prepare("SELECT id, points_balance, team_id FROM users WHERE role = 'participant' AND points_balance != 0 AND club_id = ?").all(req.clubId);
         affectedCount = nonAdmins.length;
         targetDescription = `Todos os ${affectedCount} participantes individuais`;
 
         // Registrar no extrato de cada um o ajuste de zeragem sem apagar o histórico
         for (const u of nonAdmins) {
           db.prepare(`
-            INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
-            VALUES (?, ?, ?, 0, 'reset_adjustment', ?, ?, ?, ?)
+            INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
+            VALUES (?, ?, ?, ?, 0, 'reset_adjustment', ?, ?, ?, ?)
           `).run(
+            req.clubId,
             u.id,
             u.team_id,
             -u.points_balance,
@@ -87,15 +89,15 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
           );
         }
 
-        db.prepare("UPDATE users SET points_balance = 0 WHERE role = 'participant'").run();
+        db.prepare("UPDATE users SET points_balance = 0 WHERE role = 'participant' AND club_id = ?").run(req.clubId);
 
       } else if (reset_type === 'all_collective') {
         // Zerar saldo coletivo das equipes
-        const teams = db.prepare('SELECT id, collective_balance FROM teams WHERE collective_balance != 0').all();
+        const teams = db.prepare('SELECT id, collective_balance FROM teams WHERE collective_balance != 0 AND club_id = ?').all(req.clubId);
         affectedCount = teams.length;
         targetDescription = `Saldos coletivos de ${affectedCount} equipes`;
 
-        db.prepare('UPDATE teams SET collective_balance = 0').run();
+        db.prepare('UPDATE teams SET collective_balance = 0 WHERE club_id = ?').run(req.clubId);
 
       } else if (reset_type === 'selected_users') {
         // Zerar somente participantes selecionados
@@ -105,17 +107,18 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
 
         const selectedUsers = db.prepare(`
           SELECT id, name, points_balance, team_id FROM users
-          WHERE id IN (${target_user_ids.map(() => '?').join(',')})
-        `).all(...target_user_ids);
+          WHERE club_id = ? AND id IN (${target_user_ids.map(() => '?').join(',')})
+        `).all(req.clubId, ...target_user_ids);
 
         affectedCount = selectedUsers.length;
         targetDescription = `${affectedCount} participantes selecionados (${selectedUsers.map(u => u.name).join(', ')})`;
 
         for (const u of selectedUsers) {
           db.prepare(`
-            INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
-            VALUES (?, ?, ?, 0, 'reset_adjustment', ?, ?, ?, ?)
+            INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
+            VALUES (?, ?, ?, ?, 0, 'reset_adjustment', ?, ?, ?, ?)
           `).run(
+            req.clubId,
             u.id,
             u.team_id,
             -u.points_balance,
@@ -124,34 +127,35 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
             activeCycle ? activeCycle.id : null,
             now
           );
-          db.prepare('UPDATE users SET points_balance = 0 WHERE id = ?').run(u.id);
+          db.prepare('UPDATE users SET points_balance = 0 WHERE id = ? AND club_id = ?').run(u.id, req.clubId);
         }
 
       } else if (reset_type === 'season_reset') {
         // Reiniciar temporada: fecha a atual, cria nova e zera saldos
-        const currentCycle = db.prepare('SELECT * FROM cycles WHERE is_active = 1').get();
+        const currentCycle = db.prepare('SELECT * FROM cycles WHERE is_active = 1 AND club_id = ?').get(req.clubId);
         if (currentCycle) {
           db.prepare('UPDATE cycles SET is_active = 0, end_date = ? WHERE id = ?').run(now, currentCycle.id);
         }
 
         const newCycleRes = db.prepare(`
-          INSERT INTO cycles (name, type, start_date, is_active, created_at)
-          VALUES (?, 'continuous', ?, 1, ?)
-        `).run(`Nova Temporada ${new Date().toLocaleDateString('pt-BR')}`, now, now);
+          INSERT INTO cycles (club_id, name, type, start_date, is_active, created_at)
+          VALUES (?, ?, 'continuous', ?, 1, ?)
+        `).run(req.clubId, `Nova Temporada ${new Date().toLocaleDateString('pt-BR')}`, now, now);
 
         const newCycleId = Number(newCycleRes.lastInsertRowid);
 
         // Zerar todos os participantes
-        const allParticipants = db.prepare("SELECT id, points_balance, team_id FROM users WHERE role = 'participant'").all();
+        const allParticipants = db.prepare("SELECT id, points_balance, team_id FROM users WHERE role = 'participant' AND club_id = ?").all(req.clubId);
         affectedCount = allParticipants.length;
         targetDescription = `Encerramento de Temporada #${currentCycle ? currentCycle.id : ''} e início da Temporada #${newCycleId}`;
 
         for (const u of allParticipants) {
           if (u.points_balance !== 0) {
             db.prepare(`
-              INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
-              VALUES (?, ?, ?, 0, 'reset_adjustment', ?, ?, ?, ?)
+              INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
+              VALUES (?, ?, ?, ?, 0, 'reset_adjustment', ?, ?, ?, ?)
             `).run(
+              req.clubId,
               u.id,
               u.team_id,
               -u.points_balance,
@@ -163,8 +167,8 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
           }
         }
 
-        db.prepare("UPDATE users SET points_balance = 0 WHERE role = 'participant'").run();
-        db.prepare('UPDATE teams SET collective_balance = 0').run();
+        db.prepare("UPDATE users SET points_balance = 0, total_points = 0 WHERE role = 'participant' AND club_id = ?").run(req.clubId);
+        db.prepare('UPDATE teams SET collective_balance = 0 WHERE club_id = ?').run(req.clubId);
 
       } else {
         throw new Error('Tipo de reset não reconhecido.');
@@ -172,9 +176,10 @@ router.post('/execute', authMiddleware, requireRole('superadmin'), (req, res) =>
 
       // Salvar snapshot no histórico de resets
       const resetLog = db.prepare(`
-        INSERT INTO reset_history (actor_id, reset_type, target_description, affected_count, reason, snapshot_data, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO reset_history (club_id, actor_id, reset_type, target_description, affected_count, reason, snapshot_data, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
+        req.clubId,
         actor.id,
         reset_type,
         targetDescription,
@@ -225,7 +230,7 @@ router.post('/restore/:id', authMiddleware, requireRole('superadmin'), (req, res
     return res.status(403).json({ error: 'Senha incorreta.' });
   }
 
-  const resetRecord = db.prepare('SELECT * FROM reset_history WHERE id = ?').get(resetId);
+  const resetRecord = db.prepare('SELECT * FROM reset_history WHERE id = ? AND club_id = ?').get(resetId, req.clubId);
   if (!resetRecord) {
     return res.status(404).json({ error: 'Registro de snapshot não encontrado.' });
   }
@@ -239,11 +244,12 @@ router.post('/restore/:id', authMiddleware, requireRole('superadmin'), (req, res
       // Restaurar saldos dos usuários
       if (Array.isArray(snapshot.users)) {
         for (const u of snapshot.users) {
-          db.prepare('UPDATE users SET points_balance = ? WHERE id = ?').run(u.points_balance, u.id);
+          db.prepare('UPDATE users SET points_balance = ? WHERE id = ? AND club_id = ?').run(u.points_balance, u.id, req.clubId);
           db.prepare(`
-            INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, created_at)
-            VALUES (?, ?, ?, ?, 'correction', ?, ?, ?)
+            INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, created_at)
+            VALUES (?, ?, ?, ?, ?, 'correction', ?, ?, ?)
           `).run(
+            req.clubId,
             u.id,
             u.team_id,
             u.points_balance,

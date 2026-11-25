@@ -169,6 +169,86 @@ function initDatabase() {
   try {
     db.exec('ALTER TABLE users ADD COLUMN total_points INTEGER NOT NULL DEFAULT 0;');
   } catch (_) {}
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN is_platform_admin INTEGER NOT NULL DEFAULT 0;');
+  } catch (_) {}
+
+  // =========================================================
+  // MULTI-CLUBE (SaaS): Tabela de Clubes e Configurações por Clube
+  // =========================================================
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS clubs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      join_code TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'trial' CHECK(status IN ('trial', 'active', 'suspended')),
+      plan_name TEXT NOT NULL DEFAULT 'Teste 7 Dias',
+      monthly_price REAL NOT NULL DEFAULT 39.90,
+      expires_at TEXT NOT NULL,
+      max_members INTEGER NOT NULL DEFAULT 100,
+      owner_email TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS club_settings (
+      club_id INTEGER NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (club_id, key)
+    );
+  `);
+
+  // Migrar tabela teams para remover UNIQUE global de name e usar UNIQUE(club_id, name)
+  try {
+    const teamsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='teams'").get();
+    if (teamsSchema && teamsSchema.sql && !teamsSchema.sql.includes('club_id')) {
+      db.exec('PRAGMA foreign_keys = OFF;');
+      db.exec(`
+        CREATE TABLE teams_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          club_id INTEGER REFERENCES clubs(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT '#1e40af',
+          icon TEXT NOT NULL DEFAULT 'Shield',
+          motto TEXT,
+          collective_balance INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          UNIQUE(club_id, name)
+        );
+        INSERT INTO teams_new (id, club_id, name, color, icon, motto, collective_balance, created_at)
+        SELECT id, NULL, name, color, icon, motto, collective_balance, created_at FROM teams;
+        DROP TABLE teams;
+        ALTER TABLE teams_new RENAME TO teams;
+      `);
+      db.exec('PRAGMA foreign_keys = ON;');
+    }
+  } catch (err) {
+    console.warn('Aviso ao migrar tabela teams:', err.message);
+    try { db.exec('PRAGMA foreign_keys = ON;'); } catch (_) {}
+  }
+
+  // Adicionar club_id nas demais tabelas
+  const tablesWithClubId = ['users', 'teams', 'cycles', 'point_transactions', 'auctions', 'reset_history', 'audit_logs'];
+  for (const tbl of tablesWithClubId) {
+    try {
+      db.exec(`ALTER TABLE ${tbl} ADD COLUMN club_id INTEGER REFERENCES clubs(id);`);
+    } catch (_) {}
+  }
+
+  // Índices para club_id
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_users_club ON users(club_id);
+      CREATE INDEX IF NOT EXISTS idx_teams_club ON teams(club_id);
+      CREATE INDEX IF NOT EXISTS idx_tx_club ON point_transactions(club_id);
+      CREATE INDEX IF NOT EXISTS idx_auctions_club ON auctions(club_id);
+      CREATE INDEX IF NOT EXISTS idx_cycles_club ON cycles(club_id);
+    `);
+  } catch (_) {}
 
   // Sincronizar total_points inicial com base em points_balance caso esteja zerado
   try {
@@ -212,17 +292,56 @@ function initDatabase() {
     }
   }
 
-  // Ciclo padrão ativo
-  const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1').get();
+  // Garantir que existe ao menos o Clube #1 padrão e vincular registros legados
+  let defaultClub = db.prepare('SELECT id FROM clubs ORDER BY id ASC LIMIT 1').get();
+  if (!defaultClub) {
+    const existingClubName = getSetting('club_name', 'Clube de Desbravadores Albatroz');
+    const clubRes = db.prepare(`
+      INSERT INTO clubs (name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members, created_at, updated_at)
+      VALUES (?, 'albatroz', 'ALBATROZ', 'active', 'Fundador', 0, '2099-12-31T23:59:59.000Z', 500, ?, ?)
+    `).run(existingClubName, now, now);
+    defaultClub = { id: Number(clubRes.lastInsertRowid) };
+  }
+
+  const defaultClubId = defaultClub.id;
+  for (const tbl of ['users', 'teams', 'cycles', 'point_transactions', 'auctions', 'reset_history', 'audit_logs']) {
+    try {
+      db.prepare(`UPDATE ${tbl} SET club_id = ? WHERE club_id IS NULL`).run(defaultClubId);
+    } catch (_) {}
+  }
+
+  // Copiar app_settings para club_settings do Clube #1 se estiver vazio
+  const clubSettingsCount = db.prepare('SELECT COUNT(*) as count FROM club_settings WHERE club_id = ?').get(defaultClubId).count;
+  if (clubSettingsCount === 0) {
+    const globalSettings = db.prepare('SELECT key, value, updated_at FROM app_settings').all();
+    const csInsert = db.prepare('INSERT OR IGNORE INTO club_settings (club_id, key, value, updated_at) VALUES (?, ?, ?, ?)');
+    for (const gs of globalSettings) {
+      if (gs.key !== 'google_client_id') {
+        csInsert.run(defaultClubId, gs.key, gs.value, gs.updated_at);
+      }
+    }
+  }
+
+  // Garantir ao menos 1 Platform Admin (dono do SaaS)
+  const hasPlatformAdmin = db.prepare('SELECT id FROM users WHERE is_platform_admin = 1 LIMIT 1').get();
+  if (!hasPlatformAdmin) {
+    const firstSuperAdmin = db.prepare("SELECT id FROM users WHERE role = 'superadmin' ORDER BY id ASC LIMIT 1").get();
+    if (firstSuperAdmin) {
+      db.prepare('UPDATE users SET is_platform_admin = 1 WHERE id = ?').run(firstSuperAdmin.id);
+    }
+  }
+
+  // Ciclo padrão ativo para o clube padrão
+  const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1 AND club_id = ?').get(defaultClubId);
   if (!activeCycle) {
     db.prepare(`
-      INSERT INTO cycles (name, type, start_date, is_active, created_at)
-      VALUES (?, ?, ?, 1, ?)
-    `).run('Temporada Atual - 2026/2', 'continuous', now, now);
+      INSERT INTO cycles (club_id, name, type, start_date, is_active, created_at)
+      VALUES (?, ?, ?, ?, 1, ?)
+    `).run(defaultClubId, 'Temporada Atual - 2026/2', 'continuous', now, now);
   }
 
   // Unidades oficiais padrão se a tabela estiver vazia
-  const teamsCount = db.prepare('SELECT COUNT(*) as count FROM teams').get().count;
+  const teamsCount = db.prepare('SELECT COUNT(*) as count FROM teams WHERE club_id = ?').get(defaultClubId).count;
   if (teamsCount === 0) {
     const teamsData = [
       { name: 'Unidade Águia Imperial', color: '#1E40AF', icon: 'Shield', motto: 'Sempre altos e leais!' },
@@ -232,10 +351,52 @@ function initDatabase() {
     ];
     for (const t of teamsData) {
       db.prepare(`
-        INSERT INTO teams (name, color, icon, motto, collective_balance, created_at)
-        VALUES (?, ?, ?, ?, 0, ?)
-      `).run(t.name, t.color, t.icon, t.motto, now);
+        INSERT INTO teams (club_id, name, color, icon, motto, collective_balance, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?)
+      `).run(defaultClubId, t.name, t.color, t.icon, t.motto, now);
     }
+  }
+}
+
+// Inicializar configurações e estrutura básica para um novo clube
+function initNewClubDefaults(clubId, clubName) {
+  const now = new Date().toISOString();
+  const defaults = [
+    { key: 'allow_negative_balance', value: 'false' },
+    { key: 'team_score_mode', value: 'sum' },
+    { key: 'anti_sniper_seconds', value: '15' },
+    { key: 'anti_sniper_extension', value: '30' },
+    { key: 'default_bid_step', value: '10' },
+    { key: 'director_points_limit', value: '500' },
+    { key: 'director_can_award_points', value: 'true' },
+    { key: 'reset_keep_auction_points', value: 'true' },
+    { key: 'director_registration_code', value: 'DIRETORIA2026' },
+    { key: 'superadmin_registration_code', value: 'PASTOR2026' },
+    { key: 'require_points_for_bids', value: 'true' },
+    { key: 'enable_points_system', value: 'true' },
+    { key: 'club_name', value: clubName || 'Meu Clube de Desbravadores' },
+    { key: 'timezone', value: 'America/Sao_Paulo' }
+  ];
+
+  const csInsert = db.prepare('INSERT OR IGNORE INTO club_settings (club_id, key, value, updated_at) VALUES (?, ?, ?, ?)');
+  for (const d of defaults) {
+    csInsert.run(clubId, d.key, d.value, now);
+  }
+
+  db.prepare(`
+    INSERT INTO cycles (club_id, name, type, start_date, is_active, created_at)
+    VALUES (?, 'Temporada Inicial', 'continuous', ?, 1, ?)
+  `).run(clubId, now, now);
+
+  const starterTeams = [
+    { name: 'Unidade Águia', color: '#1E40AF', icon: 'Shield', motto: 'Sempre altos e leais!' },
+    { name: 'Unidade Falcão', color: '#D97706', icon: 'Award', motto: 'Velozes e pontuais!' }
+  ];
+  for (const t of starterTeams) {
+    db.prepare(`
+      INSERT OR IGNORE INTO teams (club_id, name, color, icon, motto, collective_balance, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?)
+    `).run(clubId, t.name, t.color, t.icon, t.motto, now);
   }
 }
 
@@ -254,13 +415,21 @@ function withTransaction(fn) {
   }
 }
 
-// Helper para registrar log de auditoria
-function logAudit(actorId, action, entityType, entityId, details = null) {
+// Helper para registrar log de auditoria (com suporte a club_id)
+function logAudit(actorId, action, entityType, entityId, details = null, clubId = null) {
   const now = new Date().toISOString();
+  let resolvedClubId = clubId;
+  if (!resolvedClubId && actorId) {
+    try {
+      const actor = db.prepare('SELECT club_id FROM users WHERE id = ?').get(actorId);
+      if (actor) resolvedClubId = actor.club_id;
+    } catch (_) {}
+  }
   db.prepare(`
-    INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, details, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (club_id, actor_id, action, entity_type, entity_id, details, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
+    resolvedClubId || null,
     actorId,
     action,
     entityType,
@@ -270,15 +439,27 @@ function logAudit(actorId, action, entityType, entityId, details = null) {
   );
 }
 
-// Helper para obter configuração
-function getSetting(key, defaultValue = null) {
+// Helper para obter configuração (por clube se clubId informado, senão global)
+function getSetting(key, defaultValue = null, clubId = null) {
+  if (clubId) {
+    const clubRow = db.prepare('SELECT value FROM club_settings WHERE club_id = ? AND key = ?').get(clubId, key);
+    if (clubRow) return clubRow.value;
+  }
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
   return row ? row.value : defaultValue;
 }
 
-// Helper para salvar configuração
-function setSetting(key, value) {
+// Helper para salvar configuração (por clube se clubId informado, senão global)
+function setSetting(key, value, clubId = null) {
   const now = new Date().toISOString();
+  if (clubId) {
+    db.prepare(`
+      INSERT INTO club_settings (club_id, key, value, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(club_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(clubId, key, String(value), now);
+    return;
+  }
   db.prepare(`
     INSERT INTO app_settings (key, value, updated_at)
     VALUES (?, ?, ?)
@@ -289,6 +470,7 @@ function setSetting(key, value) {
 module.exports = {
   db,
   initDatabase,
+  initNewClubDefaults,
   withTransaction,
   logAudit,
   getSetting,

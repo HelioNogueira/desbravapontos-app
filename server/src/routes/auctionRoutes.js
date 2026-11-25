@@ -15,9 +15,9 @@ router.get('/', authMiddleware, (req, res) => {
            (SELECT COUNT(*) FROM auction_bids WHERE auction_id = a.id) as total_bids
     FROM auctions a
     LEFT JOIN users u ON a.created_by = u.id
-    WHERE 1=1
+    WHERE a.club_id = ?
   `;
-  const params = [];
+  const params = [req.clubId];
 
   if (status) {
     query += ' AND a.status = ?';
@@ -59,8 +59,8 @@ router.get('/:id', authMiddleware, (req, res) => {
     SELECT a.*, u.name as creator_name
     FROM auctions a
     LEFT JOIN users u ON a.created_by = u.id
-    WHERE a.id = ?
-  `).get(auctionId);
+    WHERE a.id = ? AND a.club_id = ?
+  `).get(auctionId, req.clubId);
 
   if (!auction) {
     return res.status(404).json({ error: 'Leilão não encontrado.' });
@@ -141,15 +141,16 @@ router.post('/', authMiddleware, requireRole(['superadmin', 'director']), (req, 
   const nowIso = now.toISOString();
 
   // Ciclo ativo
-  const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1').get();
+  const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1 AND club_id = ?').get(req.clubId);
   const cycleId = activeCycle ? activeCycle.id : null;
 
   try {
     const newAuctionId = withTransaction(() => {
       const result = db.prepare(`
-        INSERT INTO auctions (title, description, round_number, mode, status, start_time, end_time, duration_minutes, cycle_id, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO auctions (club_id, title, description, round_number, mode, status, start_time, end_time, duration_minutes, cycle_id, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
+        req.clubId,
         title.trim(),
         description ? description.trim() : '',
         parseInt(round_number, 10) || 1,
@@ -208,6 +209,11 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   const { item_id, amount, is_team_bid = false } = req.body;
   const user = req.user;
 
+  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
+  if (!auction) {
+    return res.status(404).json({ error: 'Leilão não encontrado neste clube.' });
+  }
+
   try {
     const result = placeBid({
       auctionId: Number(auctionId),
@@ -232,6 +238,11 @@ router.post('/:id/status', authMiddleware, requireRole(['superadmin', 'director'
   const auctionId = req.params.id;
   const { status, reason = '' } = req.body;
 
+  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
+  if (!auction) {
+    return res.status(404).json({ error: 'Leilão não encontrado.' });
+  }
+
   try {
     setAuctionStatus(Number(auctionId), status, reason, req.user.id);
     return res.json({
@@ -247,6 +258,11 @@ router.post('/:id/status', authMiddleware, requireRole(['superadmin', 'director'
 router.post('/:id/items', authMiddleware, requireRole(['superadmin', 'director']), (req, res) => {
   const auctionId = req.params.id;
   const { title, description, image_url, starting_bid = 10, bid_step = 5 } = req.body;
+
+  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
+  if (!auction) {
+    return res.status(404).json({ error: 'Leilão não encontrado.' });
+  }
 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'Título do item é obrigatório.' });
@@ -276,11 +292,16 @@ router.post('/:id/items', authMiddleware, requireRole(['superadmin', 'director']
 router.delete('/:id', authMiddleware, requireRole(['superadmin', 'director']), (req, res) => {
   const auctionId = req.params.id;
 
+  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
+  if (!auction) {
+    return res.status(404).json({ error: 'Leilão não encontrado.' });
+  }
+
   withTransaction(() => {
     db.prepare('DELETE FROM auction_bids WHERE auction_id = ?').run(auctionId);
     db.prepare('DELETE FROM auction_items WHERE auction_id = ?').run(auctionId);
-    db.prepare('DELETE FROM auctions WHERE id = ?').run(auctionId);
-    logAudit(req.user.id, 'DELETE_AUCTION', 'auctions', auctionId, 'Leilão excluído.');
+    db.prepare('DELETE FROM auctions WHERE id = ? AND club_id = ?').run(auctionId, req.clubId);
+    logAudit(req.user.id, 'DELETE_AUCTION', 'auctions', auctionId, 'Leilão excluído.', req.clubId);
   });
 
   return res.json({ message: 'Leilão excluído com sucesso.' });

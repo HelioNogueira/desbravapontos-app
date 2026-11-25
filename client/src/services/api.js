@@ -64,14 +64,23 @@ export async function apiRequest(endpoint, options = {}) {
 }
 
 export const api = {
-  // Auth
+  // Auth & Clubes
   login: (email, password) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   register: (userData) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
+  registerClub: (clubData) => apiRequest('/auth/register-club', { method: 'POST', body: JSON.stringify(clubData) }),
+  getClubByCode: (code) => apiRequest(`/auth/club-by-code${code ? `?code=${encodeURIComponent(code)}` : ''}`),
   getGoogleClientId: () => apiRequest('/auth/google-client-id'),
   loginWithGoogle: (data) => apiRequest('/auth/google', { method: 'POST', body: JSON.stringify(data) }),
-  getPublicTeams: () => apiRequest('/auth/public-teams'),
+  getPublicTeams: (clubCode = '') => apiRequest(`/auth/public-teams${clubCode ? `?club_code=${encodeURIComponent(clubCode)}` : ''}`),
   getMe: () => apiRequest('/auth/me'),
   updateProfile: (profileData) => apiRequest('/auth/profile', { method: 'PUT', body: JSON.stringify(profileData) }),
+
+  // Master SaaS (Platform Owner)
+  getMasterClubs: () => apiRequest('/master/clubs'),
+  createMasterClub: (data) => apiRequest('/master/clubs', { method: 'POST', body: JSON.stringify(data) }),
+  renewMasterClub: (id, data = { days: 30 }) => apiRequest(`/master/clubs/${id}/renew`, { method: 'PATCH', body: JSON.stringify(data) }),
+  setMasterClubStatus: (id, status) => apiRequest(`/master/clubs/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  updateMasterClub: (id, data) => apiRequest(`/master/clubs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Dashboard & Stats
   getDashboard: () => apiRequest('/stats/dashboard'),

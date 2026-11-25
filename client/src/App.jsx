@@ -13,9 +13,10 @@ import WalletPage from './pages/WalletPage';
 import TeamsPage from './pages/TeamsPage';
 import AwardPointsPage from './pages/AwardPointsPage';
 import AdminPage from './pages/AdminPage';
+import MasterPage from './pages/MasterPage';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, club, loading, isPlatformAdmin, isClubExpired, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLogin, setShowLogin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -62,6 +63,8 @@ function AppContent() {
         return <AwardPointsPage />;
       case 'admin':
         return <AdminPage />;
+      case 'master':
+        return isPlatformAdmin ? <MasterPage /> : <DashboardPage onNavigate={handleNavigate} />;
       default:
         return <DashboardPage onNavigate={handleNavigate} />;
     }
@@ -81,7 +84,30 @@ function AppContent() {
 
         {/* Conteúdo com espaçamento de segurança para a barra inferior mobile */}
         <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8">
-          {user ? renderPage() : (
+          {user ? (
+            isClubExpired ? (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-5 px-4">
+                <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400">
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                </div>
+                <div className="max-w-md space-y-2">
+                  <h2 className="text-2xl font-black text-white">Assinatura do Clube Expirada</h2>
+                  <p className="text-xs sm:text-sm text-slate-400">
+                    O acesso do clube <strong className="text-amber-400">{club?.name}</strong> está temporariamente suspenso ou com a mensalidade vencida.
+                    Peça à diretoria para entrar em contato com o suporte para renovar via Pix.
+                  </p>
+                </div>
+                <button
+                  onClick={logout}
+                  className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 transition"
+                >
+                  Sair da Conta
+                </button>
+              </div>
+            ) : renderPage()
+          ) : (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6 px-4">
               <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-2xl shadow-amber-500/30 border border-amber-400/40">
                 <svg className="w-12 h-12 text-slate-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -5,7 +5,7 @@ const { authMiddleware, requireRole } = require('../auth');
 
 // Listar todas as equipes com pontuações somadas e contagem de membros
 router.get('/', authMiddleware, (req, res) => {
-  const scoreMode = getSetting('team_score_mode', 'sum');
+  const scoreMode = getSetting('team_score_mode', 'sum', req.clubId);
 
   const teams = db.prepare(`
     SELECT t.id, t.name, t.color, t.icon, t.motto, t.collective_balance, t.created_at,
@@ -13,10 +13,11 @@ router.get('/', authMiddleware, (req, res) => {
            COALESCE(SUM(CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END), 0) as total_individual_points,
            COALESCE(SUM(u.points_balance), 0) as total_wallet_balance
     FROM teams t
-    LEFT JOIN users u ON u.team_id = t.id AND u.active = 1
+    LEFT JOIN users u ON u.team_id = t.id AND u.active = 1 AND u.club_id = t.club_id
+    WHERE t.club_id = ?
     GROUP BY t.id
     ORDER BY total_individual_points DESC, total_wallet_balance DESC, t.name ASC
-  `).all();
+  `).all(req.clubId);
 
   const formatted = teams.map((team, idx) => {
     const effectivePoints = scoreMode === 'collective' ? team.collective_balance : team.total_individual_points;
@@ -41,7 +42,7 @@ router.get('/', authMiddleware, (req, res) => {
 router.get('/:id', authMiddleware, (req, res) => {
   const teamId = req.params.id;
 
-  const team = db.prepare('SELECT * FROM teams WHERE id = ?').get(teamId);
+  const team = db.prepare('SELECT * FROM teams WHERE id = ? AND club_id = ?').get(teamId, req.clubId);
   if (!team) {
     return res.status(404).json({ error: 'Equipe não encontrada.' });
   }
@@ -49,9 +50,9 @@ router.get('/:id', authMiddleware, (req, res) => {
   const members = db.prepare(`
     SELECT id, name, email, role, points_balance, total_points, avatar, active
     FROM users
-    WHERE team_id = ?
+    WHERE team_id = ? AND club_id = ?
     ORDER BY CASE WHEN total_points > 0 THEN total_points ELSE points_balance END DESC, points_balance DESC, name ASC
-  `).all(teamId);
+  `).all(teamId, req.clubId);
 
   const totalPoints = members.reduce((acc, m) => acc + (m.active ? (m.total_points > 0 ? m.total_points : m.points_balance) : 0), 0);
   const totalWallet = members.reduce((acc, m) => acc + (m.active ? m.points_balance : 0), 0);
@@ -87,7 +88,7 @@ router.post('/', authMiddleware, requireRole('superadmin'), (req, res) => {
     return res.status(400).json({ error: 'Nome da unidade/equipe é obrigatório.' });
   }
 
-  const existing = db.prepare('SELECT id FROM teams WHERE LOWER(name) = LOWER(?)').get(name.trim());
+  const existing = db.prepare('SELECT id FROM teams WHERE LOWER(name) = LOWER(?) AND club_id = ?').get(name.trim(), req.clubId);
   if (existing) {
     return res.status(400).json({ error: 'Já existe uma equipe com este nome.' });
   }
@@ -95,12 +96,12 @@ router.post('/', authMiddleware, requireRole('superadmin'), (req, res) => {
   const now = new Date().toISOString();
 
   const insert = db.prepare(`
-    INSERT INTO teams (name, color, icon, motto, collective_balance, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(name.trim(), color, icon, motto.trim(), parseInt(collective_balance, 10) || 0, now);
+    INSERT INTO teams (club_id, name, color, icon, motto, collective_balance, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(req.clubId, name.trim(), color, icon, motto.trim(), parseInt(collective_balance, 10) || 0, now);
 
   const newId = Number(insert.lastInsertRowid);
-  logAudit(req.user.id, 'CREATE_TEAM', 'teams', newId, { name, color, motto });
+  logAudit(req.user.id, 'CREATE_TEAM', 'teams', newId, { name, color, motto }, req.clubId);
 
   const created = db.prepare('SELECT * FROM teams WHERE id = ?').get(newId);
   return res.status(201).json({ team: created, message: 'Unidade criada com sucesso.' });
@@ -111,7 +112,7 @@ router.put('/:id', authMiddleware, requireRole('superadmin'), (req, res) => {
   const teamId = req.params.id;
   const { name, color, icon, motto, collective_balance } = req.body;
 
-  const team = db.prepare('SELECT * FROM teams WHERE id = ?').get(teamId);
+  const team = db.prepare('SELECT * FROM teams WHERE id = ? AND club_id = ?').get(teamId, req.clubId);
   if (!team) {
     return res.status(404).json({ error: 'Equipe não encontrada.' });
   }
@@ -123,14 +124,15 @@ router.put('/:id', authMiddleware, requireRole('superadmin'), (req, res) => {
         icon = COALESCE(?, icon),
         motto = COALESCE(?, motto),
         collective_balance = COALESCE(?, collective_balance)
-    WHERE id = ?
+    WHERE id = ? AND club_id = ?
   `).run(
     name ? name.trim() : null,
     color || null,
     icon || null,
     motto !== undefined ? motto.trim() : null,
     collective_balance !== undefined ? parseInt(collective_balance, 10) : null,
-    teamId
+    teamId,
+    req.clubId
   );
 
   logAudit(req.user.id, 'UPDATE_TEAM', 'teams', teamId, req.body);
@@ -147,12 +149,12 @@ router.post('/:id/transfer-member', authMiddleware, requireRole(['superadmin', '
     return res.status(400).json({ error: 'Informe o ID do participante.' });
   }
 
-  const targetTeam = db.prepare('SELECT * FROM teams WHERE id = ?').get(targetTeamId);
+  const targetTeam = db.prepare('SELECT * FROM teams WHERE id = ? AND club_id = ?').get(targetTeamId, req.clubId);
   if (!targetTeam) {
     return res.status(404).json({ error: 'Equipe de destino não encontrada.' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ? AND club_id = ?').get(user_id, req.clubId);
   if (!user) {
     return res.status(404).json({ error: 'Participante não encontrado.' });
   }
@@ -180,9 +182,9 @@ router.delete('/:id', authMiddleware, requireRole('superadmin'), (req, res) => {
 
   withTransaction(() => {
     // Desvincular participantes da equipe antes de excluir
-    db.prepare('UPDATE users SET team_id = NULL WHERE team_id = ?').run(teamId);
-    db.prepare('DELETE FROM teams WHERE id = ?').run(teamId);
-    logAudit(req.user.id, 'DELETE_TEAM', 'teams', teamId, 'Equipe excluída. Membros desvinculados.');
+    db.prepare('UPDATE users SET team_id = NULL WHERE team_id = ? AND club_id = ?').run(teamId, req.clubId);
+    db.prepare('DELETE FROM teams WHERE id = ? AND club_id = ?').run(teamId, req.clubId);
+    logAudit(req.user.id, 'DELETE_TEAM', 'teams', teamId, 'Equipe excluída. Membros desvinculados.', req.clubId);
   });
 
   return res.json({ message: 'Equipe excluída com sucesso.' });

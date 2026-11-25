@@ -12,9 +12,9 @@ router.get('/logs', authMiddleware, requireRole('superadmin'), (req, res) => {
     SELECT al.*, u.name as actor_name, u.email as actor_email, u.role as actor_role
     FROM audit_logs al
     LEFT JOIN users u ON al.actor_id = u.id
-    WHERE 1=1
+    WHERE al.club_id = ?
   `;
-  const params = [];
+  const params = [req.clubId];
 
   if (action) {
     query += ' AND al.action = ?';
@@ -25,24 +25,28 @@ router.get('/logs', authMiddleware, requireRole('superadmin'), (req, res) => {
   params.push(parseInt(limit, 10), parseInt(offset, 10));
 
   const logs = db.prepare(query).all(...params);
-  const total = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
+  const total = db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE club_id = ?').get(req.clubId).count;
 
   return res.json({ logs, total });
 });
 
 // GET /api/audit/settings
-// Obter todas as configurações do sistema
+// Obter todas as configurações do sistema do clube atual
 router.get('/settings', authMiddleware, (req, res) => {
-  const rows = db.prepare('SELECT key, value, updated_at FROM app_settings').all();
+  const globalRows = db.prepare('SELECT key, value FROM app_settings').all();
+  const clubRows = db.prepare('SELECT key, value FROM club_settings WHERE club_id = ?').all(req.clubId);
   const settings = {};
-  for (const r of rows) {
+  for (const r of globalRows) {
+    settings[r.key] = r.value;
+  }
+  for (const r of clubRows) {
     settings[r.key] = r.value;
   }
   return res.json({ settings });
 });
 
 // PUT /api/audit/settings
-// Atualizar configurações críticas (Apenas Superadmin)
+// Atualizar configurações críticas do clube (Apenas Superadmin)
 router.put('/settings', authMiddleware, requireRole('superadmin'), (req, res) => {
   const { settings } = req.body;
   if (!settings || typeof settings !== 'object') {
@@ -50,10 +54,14 @@ router.put('/settings', authMiddleware, requireRole('superadmin'), (req, res) =>
   }
 
   for (const [key, value] of Object.entries(settings)) {
-    setSetting(key, value);
+    if (key === 'google_client_id') {
+      if (req.isPlatformAdmin) setSetting(key, value);
+    } else {
+      setSetting(key, value, req.clubId);
+    }
   }
 
-  logAudit(req.user.id, 'UPDATE_SETTINGS', 'app_settings', 0, settings);
+  logAudit(req.user.id, 'UPDATE_SETTINGS', 'club_settings', req.clubId, settings, req.clubId);
 
   return res.json({ message: 'Configurações atualizadas com sucesso.' });
 });

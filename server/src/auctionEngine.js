@@ -41,7 +41,8 @@ function tickAuctions() {
     db.prepare(`UPDATE auctions SET status = 'active' WHERE id = ?`).run(auc.id);
     logAudit(auc.created_by, 'AUCTION_STARTED_AUTO', 'auctions', auc.id, 'Leilão iniciado automaticamente por cronograma.');
     if (ioInstance) {
-      ioInstance.emit('auction_started', { auctionId: auc.id, title: auc.title });
+      const target = auc.club_id ? ioInstance.to(`club_${auc.club_id}`) : ioInstance;
+      target.emit('auction_started', { auctionId: auc.id, title: auc.title });
     }
   }
 
@@ -59,9 +60,10 @@ function tickAuctions() {
       // Leilão terminou!
       endAuction(auc.id, 'Tempo limite esgotado');
     } else {
-      // Emitir tick de contagem regressiva para os clientes ouvindo
+      // Emitir tick de contagem regressiva para os clientes do clube ouvindo
       if (ioInstance) {
-        ioInstance.emit('auction_tick', {
+        const target = auc.club_id ? ioInstance.to(`club_${auc.club_id}`) : ioInstance;
+        target.emit('auction_tick', {
           auctionId: auc.id,
           remainingSeconds,
           endTime: auc.end_time
@@ -75,9 +77,12 @@ function tickAuctions() {
 function endAuction(auctionId, reason = 'Encerramento') {
   const now = new Date().toISOString();
 
+  let clubId = null;
+
   withTransaction(() => {
     const auction = db.prepare('SELECT * FROM auctions WHERE id = ?').get(auctionId);
     if (!auction || auction.status === 'ended') return;
+    clubId = auction.club_id;
 
     // Atualizar status do leilão
     db.prepare(`
@@ -109,9 +114,10 @@ function endAuction(auctionId, reason = 'Encerramento') {
         const winner = db.prepare('SELECT id, points_balance, team_id FROM users WHERE id = ?').get(item.current_winner_user_id);
         if (winner) {
           db.prepare(`
-            INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
-            VALUES (?, ?, ?, ?, 'auction_win', ?, ?, ?)
+            INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
+            VALUES (?, ?, ?, ?, ?, 'auction_win', ?, ?, ?)
           `).run(
+            auction.club_id,
             winner.id,
             winner.team_id,
             0, // O débito já ocorreu no momento do lance ativo
@@ -135,12 +141,13 @@ function endAuction(auctionId, reason = 'Encerramento') {
   });
 
   if (ioInstance) {
-    ioInstance.emit('auction_ended', {
+    const target = clubId ? ioInstance.to(`club_${clubId}`) : ioInstance;
+    target.emit('auction_ended', {
       auctionId,
       reason,
       message: 'O leilão foi encerrado com sucesso!'
     });
-    ioInstance.emit('ranking_updated', {
+    target.emit('ranking_updated', {
       auctionId,
       reason
     });
@@ -186,7 +193,7 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
       throw new Error('Você já possui o maior lance atual para este item!');
     }
 
-    const requirePoints = getSetting('require_points_for_bids', 'true') !== 'false';
+    const requirePoints = getSetting('require_points_for_bids', 'true', auction.club_id) !== 'false';
 
     let team = null;
     if (requirePoints) {
@@ -230,9 +237,10 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
 
         // Registrar extrato de reembolso
         db.prepare(`
-          INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
-          VALUES (?, ?, ?, ?, 'auction_refund', ?, ?, ?)
+          INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
+          VALUES (?, ?, ?, ?, ?, 'auction_refund', ?, ?, ?)
         `).run(
+          auction.club_id,
           prevUserId,
           prevTeamId,
           prevBidAmount,
@@ -244,7 +252,8 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
 
         // Notificar o usuário superado via socket
         if (ioInstance) {
-          ioInstance.emit(`user_outbid_${prevUserId}`, {
+          const target = auction.club_id ? ioInstance.to(`club_${auction.club_id}`) : ioInstance;
+          target.emit(`user_outbid_${prevUserId}`, {
             itemId: item.id,
             itemTitle: item.title,
             refundedAmount: prevBidAmount,
@@ -278,9 +287,10 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
 
         // Registrar extrato de lance
         db.prepare(`
-          INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
-          VALUES (?, ?, ?, ?, 'auction_bid', ?, ?, ?)
+          INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
+          VALUES (?, ?, ?, ?, ?, 'auction_bid', ?, ?, ?)
         `).run(
+          auction.club_id,
           user.id,
           user.team_id,
           -numAmount,
@@ -309,8 +319,8 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
 
     // 9. MECANISMO ANTI-SNIPING:
     // Se o lance ocorreu nos últimos X segundos, prorrogar o término para garantir que todos tenham tempo de contra-atacar
-    const antiSniperSec = parseInt(getSetting('anti_sniper_seconds', '15'), 10);
-    const extensionSec = parseInt(getSetting('anti_sniper_extension', '30'), 10);
+    const antiSniperSec = parseInt(getSetting('anti_sniper_seconds', '15', auction.club_id), 10);
+    const extensionSec = parseInt(getSetting('anti_sniper_extension', '30', auction.club_id), 10);
 
     const endMs = new Date(auction.end_time).getTime();
     const nowMs = Date.now();
@@ -346,12 +356,13 @@ function placeBid({ auctionId, itemId, userId, isTeamBid = false, amount }) {
       timestamp: now
     };
 
-    // Emitir para todos em tempo real
+    // Emitir para todos do clube em tempo real
     if (ioInstance) {
-      ioInstance.emit('new_bid', payload);
-      ioInstance.emit('ranking_updated', { trigger: 'new_bid', teamId: user.team_id });
+      const target = auction.club_id ? ioInstance.to(`club_${auction.club_id}`) : ioInstance;
+      target.emit('new_bid', payload);
+      target.emit('ranking_updated', { trigger: 'new_bid', teamId: user.team_id });
       if (extended) {
-        ioInstance.emit('auction_extended', {
+        target.emit('auction_extended', {
           auctionId,
           newEndTime,
           message: `Regra Anti-Sniper ativada! O tempo foi estendido em +${extensionSec}s devido a um lance nos últimos segundos!`
@@ -370,9 +381,12 @@ function setAuctionStatus(auctionId, newStatus, reason = '', actorId = 1) {
 
   const now = new Date().toISOString();
 
+  let clubId = null;
+
   withTransaction(() => {
     const auc = db.prepare('SELECT * FROM auctions WHERE id = ?').get(auctionId);
     if (!auc) throw new Error('Leilão não encontrado.');
+    clubId = auc.club_id;
 
     if (newStatus === 'paused') {
       db.prepare('UPDATE auctions SET status = ?, pause_reason = ? WHERE id = ?').run('paused', reason, auctionId);
@@ -390,9 +404,10 @@ function setAuctionStatus(auctionId, newStatus, reason = '', actorId = 1) {
             const newBal = user.points_balance + item.current_bid;
             db.prepare('UPDATE users SET points_balance = ? WHERE id = ?').run(newBal, user.id);
             db.prepare(`
-              INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
-              VALUES (?, ?, ?, ?, 'auction_refund', ?, ?, ?)
+              INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, cycle_id, created_at)
+              VALUES (?, ?, ?, ?, ?, 'auction_refund', ?, ?, ?)
             `).run(
+              auc.club_id,
               user.id,
               item.current_winner_team_id,
               item.current_bid,
@@ -419,7 +434,8 @@ function setAuctionStatus(auctionId, newStatus, reason = '', actorId = 1) {
   });
 
   if (ioInstance) {
-    ioInstance.emit('auction_status_changed', {
+    const target = clubId ? ioInstance.to(`club_${clubId}`) : ioInstance;
+    target.emit('auction_status_changed', {
       auctionId,
       status: newStatus,
       reason

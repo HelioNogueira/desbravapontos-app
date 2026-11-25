@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenProfile }) {
-  const { user, logout, isSuperAdmin, isDirector } = useAuth();
+  const { user, club, logout, isSuperAdmin, isDirector, isPlatformAdmin } = useAuth();
   const { connected } = useSocket();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -37,8 +37,8 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPro
               <span className="font-black text-sm sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent block leading-tight">
                 DesbravaPontos
               </span>
-              <span className="text-[9px] sm:text-[10px] tracking-wider uppercase font-bold text-amber-500/90 block">
-                App Desbravadores
+              <span className="text-[9px] sm:text-[10px] tracking-wider uppercase font-bold text-amber-500/90 block truncate max-w-[150px] sm:max-w-[220px]">
+                {club?.name || 'App Desbravadores'}
               </span>
             </div>
           </div>
@@ -122,6 +122,20 @@ export default function Navbar({ activeTab, setActiveTab, onOpenLogin, onOpenPro
               >
                 <Sliders className="w-4 h-4" />
                 Gestão
+              </button>
+            )}
+
+            {isPlatformAdmin && (
+              <button
+                onClick={() => setActiveTab('master')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  activeTab === 'master'
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Crown className="w-4 h-4 text-emerald-400" />
+                Master
               </button>
             )}
           </nav>

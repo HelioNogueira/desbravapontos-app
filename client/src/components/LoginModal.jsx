@@ -20,13 +20,22 @@ import {
 } from 'lucide-react';
 
 export default function LoginModal({ isOpen, onClose }) {
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, registerClub, loginWithGoogle } = useAuth();
 
-  const [tab, setTab] = useState('login'); // 'login', 'register' ou 'complete_google'
+  const [tab, setTab] = useState('login'); // 'login', 'register', 'register_club' ou 'complete_google'
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [teams, setTeams] = useState([]);
+  const [clubCode, setClubCode] = useState('');
+  const [resolvedClub, setResolvedClub] = useState(null);
+
+  // Form de Novo Clube (7 dias grátis)
+  const [newClubName, setNewClubName] = useState('');
+  const [newClubCode, setNewClubCode] = useState('');
+  const [newClubAdminName, setNewClubAdminName] = useState('');
+  const [newClubAdminEmail, setNewClubAdminEmail] = useState('');
+  const [newClubAdminPassword, setNewClubAdminPassword] = useState('');
 
   // Google Sign-In States
   const [googleClientId, setGoogleClientId] = useState('');
@@ -57,19 +66,46 @@ export default function LoginModal({ isOpen, onClose }) {
   const [regCode, setRegCode] = useState('');
 
   // Carregar unidades públicas para o formulário de cadastro e Google Client ID
+  const loadTeamsForClub = async (code = '') => {
+    try {
+      const res = await api.getPublicTeams(code);
+      setTeams(res.teams || []);
+      if (res.club) {
+        setResolvedClub(res.club);
+      }
+      if (res.teams?.length > 0) {
+        setRegTeamId(res.teams[0].id);
+        setGoogleTeamId(res.teams[0].id);
+      } else {
+        setRegTeamId('');
+        setGoogleTeamId('');
+      }
+    } catch (_) {}
+  };
+
+  const handleLookupClub = async (codeToLookup) => {
+    const clean = (codeToLookup || '').trim().toUpperCase();
+    if (!clean) {
+      loadTeamsForClub('');
+      return;
+    }
+    try {
+      const res = await api.getClubByCode(clean);
+      setResolvedClub(res.club);
+      setTeams(res.teams || []);
+      setRegTeamId(res.teams?.[0]?.id || '');
+      setGoogleTeamId(res.teams?.[0]?.id || '');
+      setError('');
+    } catch (err) {
+      setResolvedClub(null);
+      setTeams([]);
+      setError(err.message || 'Código do clube não encontrado.');
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
-      api.getPublicTeams()
-        .then(res => {
-          setTeams(res.teams || []);
-          if (res.teams?.length > 0 && !regTeamId) {
-            setRegTeamId(res.teams[0].id);
-          }
-          if (res.teams?.length > 0 && !googleTeamId) {
-            setGoogleTeamId(res.teams[0].id);
-          }
-        })
-        .catch(() => {});
+      loadTeamsForClub(clubCode);
 
       api.getGoogleClientId()
         .then(res => {
@@ -185,6 +221,7 @@ export default function LoginModal({ isOpen, onClose }) {
         credential: googleCredential,
         firstName: googleFirstName.trim(),
         lastName: googleLastName.trim(),
+        club_code: clubCode.trim() || undefined,
         team_id: googleRole === 'superadmin' ? null : (googleTeamId ? Number(googleTeamId) : null),
         club_role: googleClubRole || (
           googleRole === 'superadmin' ? 'Pastor / Diretor Geral' :
@@ -233,6 +270,7 @@ export default function LoginModal({ isOpen, onClose }) {
         email: regEmail,
         password: regPassword,
         role,
+        club_code: clubCode.trim() || undefined,
         team_id: role === 'superadmin' ? null : (regTeamId ? Number(regTeamId) : null),
         club_role: regClubRole || (
           role === 'superadmin' ? 'Pastor / Diretor Geral' :
@@ -248,6 +286,30 @@ export default function LoginModal({ isOpen, onClose }) {
       }, 1200);
     } catch (err) {
       setError(err.message || 'Erro ao realizar cadastro.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterClubSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const res = await registerClub({
+        clubName: newClubName,
+        joinCode: newClubCode,
+        adminName: newClubAdminName,
+        adminEmail: newClubAdminEmail,
+        adminPassword: newClubAdminPassword
+      });
+      setSuccess(res.message || 'Clube cadastrado com 7 dias grátis!');
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } catch (err) {
+      setError(err.message || 'Erro ao cadastrar novo clube.');
     } finally {
       setLoading(false);
     }
@@ -284,28 +346,39 @@ export default function LoginModal({ isOpen, onClose }) {
             </span>
           </div>
         ) : (
-          <div className="flex p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-5">
+          <div className="flex p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-5 gap-1">
             <button
               type="button"
               onClick={() => { setTab('login'); setError(''); setSuccess(''); }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
+              className={`flex-1 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition ${
                 tab === 'login'
                   ? 'bg-amber-500 text-slate-950 shadow-md'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Já tenho conta
+              Entrar
             </button>
             <button
               type="button"
               onClick={() => { setTab('register'); setError(''); setSuccess(''); }}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
+              className={`flex-1 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition ${
                 tab === 'register'
                   ? 'bg-amber-500 text-slate-950 shadow-md'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               Cadastrar-se
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTab('register_club'); setError(''); setSuccess(''); }}
+              className={`flex-1 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition ${
+                tab === 'register_club'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md'
+                  : 'text-emerald-400/90 hover:text-emerald-300'
+              }`}
+            >
+              Novo Clube
             </button>
           </div>
         )}
@@ -425,6 +498,35 @@ export default function LoginModal({ isOpen, onClose }) {
                 </div>
               </div>
 
+              {/* Código do Clube (Multi-Clube) */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                  Código do Clube (Opcional para clube padrão)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={clubCode}
+                    onChange={(e) => setClubCode(e.target.value.toUpperCase())}
+                    onBlur={() => handleLookupClub(clubCode)}
+                    placeholder="Ex: ALBATROZ"
+                    className="flex-1 px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-mono uppercase focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleLookupClub(clubCode)}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-amber-400"
+                  >
+                    Buscar
+                  </button>
+                </div>
+                {resolvedClub && (
+                  <p className="text-[11px] text-emerald-400 mt-1 font-semibold">
+                    Clube selecionado: {resolvedClub.name}
+                  </p>
+                )}
+              </div>
+
               {/* Seleção de Unidade */}
               {googleRole !== 'superadmin' && (
                 <div>
@@ -522,9 +624,123 @@ export default function LoginModal({ isOpen, onClose }) {
               </button>
             </form>
           </div>
+        ) : tab === 'register_club' ? (
+          /* ABA 3: CADASTRAR NOVO CLUBE (7 DIAS GRÁTIS) */
+          <form onSubmit={handleRegisterClubSubmit} className="space-y-3.5 animate-in fade-in">
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs">
+              <strong className="block">Teste Grátis por 7 Dias</strong>
+              <span className="text-[11px] text-emerald-200/80">
+                Cadastre seu Clube de Desbravadores agora e tenha pontuação, ranking e leilão ao vivo isolados para seus membros.
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Nome do Clube *
+              </label>
+              <input
+                type="text"
+                required
+                value={newClubName}
+                onChange={(e) => setNewClubName(e.target.value)}
+                placeholder="Ex: Clube de Desbravadores Águias"
+                className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Código de Convite do Clube (opcional)
+              </label>
+              <input
+                type="text"
+                value={newClubCode}
+                onChange={(e) => setNewClubCode(e.target.value.toUpperCase())}
+                placeholder="Ex: AGUIAS2026 (gerado se ficar vazio)"
+                className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Seu Nome (Diretor / Pastor Responsável) *
+              </label>
+              <input
+                type="text"
+                required
+                value={newClubAdminName}
+                onChange={(e) => setNewClubAdminName(e.target.value)}
+                placeholder="Ex: Pr. João Marcos"
+                className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">E-mail *</label>
+                <input
+                  type="email"
+                  required
+                  value={newClubAdminEmail}
+                  onChange={(e) => setNewClubAdminEmail(e.target.value)}
+                  placeholder="diretor@clube.org"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">Senha (mín. 6) *</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newClubAdminPassword}
+                  onChange={(e) => setNewClubAdminPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
+            >
+              {loading ? 'Criando Clube...' : 'Criar Clube e Começar 7 Dias Grátis'}
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </form>
         ) : (
           /* ABA 2: CADASTRO COMPLETO */
           <form onSubmit={handleRegisterSubmit} className="space-y-4">
+            {/* Código do Clube */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
+                Código do Clube (Opcional para clube padrão)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={clubCode}
+                  onChange={(e) => setClubCode(e.target.value.toUpperCase())}
+                  onBlur={() => handleLookupClub(clubCode)}
+                  placeholder="Ex: ALBATROZ"
+                  className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-mono uppercase focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleLookupClub(clubCode)}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-amber-400"
+                >
+                  Buscar
+                </button>
+              </div>
+              {resolvedClub && (
+                <p className="text-[11px] text-emerald-400 mt-1 font-semibold">
+                  Clube: {resolvedClub.name}
+                </p>
+              )}
+            </div>
             {/* 1. Seleção do Tipo de Conta */}
             <div>
               <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2">

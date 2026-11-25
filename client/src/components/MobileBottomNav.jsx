@@ -7,11 +7,12 @@ import {
   Users,
   Award,
   Sliders,
-  Sparkles
+  Sparkles,
+  Crown
 } from 'lucide-react';
 
 export default function MobileBottomNav({ activeTab, setActiveTab }) {
-  const { isSuperAdmin, isDirector } = useAuth();
+  const { isSuperAdmin, isDirector, isPlatformAdmin } = useAuth();
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/90 px-2 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl">
@@ -110,6 +111,21 @@ export default function MobileBottomNav({ activeTab, setActiveTab }) {
               <Sliders className="w-5 h-5" />
             </div>
             <span className="text-[10px] mt-0.5 tracking-tight font-medium">Gestão</span>
+          </button>
+        )}
+        {isPlatformAdmin && (
+          <button
+            onClick={() => setActiveTab('master')}
+            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all duration-200 active:scale-90 ${
+              activeTab === 'master'
+                ? 'text-emerald-400 font-bold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <div className={`p-1 rounded-xl transition ${activeTab === 'master' ? 'bg-emerald-500/15' : ''}`}>
+              <Crown className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] mt-0.5 tracking-tight font-medium">Master</span>
           </button>
         )}
       </div>

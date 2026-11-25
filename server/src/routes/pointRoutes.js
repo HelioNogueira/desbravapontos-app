@@ -37,12 +37,12 @@ router.post('/award-single', authMiddleware, requireRole(['superadmin', 'directo
 
   // Verificação de permissões do Diretor
   if (actor.role === 'director') {
-    const directorCanAward = getSetting('director_can_award_points', 'true') === 'true';
+    const directorCanAward = getSetting('director_can_award_points', 'true', req.clubId) === 'true';
     if (!directorCanAward) {
       return res.status(403).json({ error: 'A distribuição de pontos pela diretoria está desativada no momento.' });
     }
 
-    const limit = parseInt(getSetting('director_points_limit', '500'), 10);
+    const limit = parseInt(getSetting('director_points_limit', '500', req.clubId), 10);
     if (Math.abs(numAmount) > limit) {
       return res.status(403).json({
         error: `O limite máximo permitido para lançamentos da diretoria é de ${limit} pontos por operação.`
@@ -50,12 +50,12 @@ router.post('/award-single', authMiddleware, requireRole(['superadmin', 'directo
     }
   }
 
-  const allowNegative = getSetting('allow_negative_balance', 'false') === 'true';
+  const allowNegative = getSetting('allow_negative_balance', 'false', req.clubId) === 'true';
   const now = new Date().toISOString();
 
   try {
     const transactionRecord = withTransaction(() => {
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
+      const user = db.prepare('SELECT * FROM users WHERE id = ? AND club_id = ?').get(user_id, req.clubId);
       if (!user) throw new Error('Participante não encontrado.');
       if (!user.active) throw new Error('Não é possível lançar pontos para uma conta inativa.');
 
@@ -76,7 +76,7 @@ router.post('/award-single', authMiddleware, requireRole(['superadmin', 'directo
       }
 
       // Ciclo ativo
-      const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1').get();
+      const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1 AND club_id = ?').get(req.clubId);
       const cycleId = activeCycle ? activeCycle.id : null;
 
       // Atualizar saldo da carteira e pontuação geral da temporada
@@ -87,9 +87,9 @@ router.post('/award-single', authMiddleware, requireRole(['superadmin', 'directo
 
       // Inserir transação
       const txResult = db.prepare(`
-        INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(user_id, user.team_id, numAmount, newBalance, type, reason.trim(), actor.id, cycleId, now);
+        INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(req.clubId, user_id, user.team_id, numAmount, newBalance, type, reason.trim(), actor.id, cycleId, now);
 
       const txId = Number(txResult.lastInsertRowid);
       logAudit(actor.id, 'AWARD_POINTS_SINGLE', 'point_transactions', txId, {
@@ -131,14 +131,14 @@ router.post('/award-batch', authMiddleware, requireRole(['superadmin', 'director
 
   // Verificação de permissões do Diretor
   if (actor.role === 'director') {
-    const directorCanAward = getSetting('director_can_award_points', 'true') === 'true';
+    const directorCanAward = getSetting('director_can_award_points', 'true', req.clubId) === 'true';
     if (!directorCanAward) {
       return res.status(403).json({ error: 'A distribuição de pontos pela diretoria está desativada no momento.' });
     }
   }
 
-  const allowNegative = getSetting('allow_negative_balance', 'false') === 'true';
-  const directorLimit = parseInt(getSetting('director_points_limit', '500'), 10);
+  const allowNegative = getSetting('allow_negative_balance', 'false', req.clubId) === 'true';
+  const directorLimit = parseInt(getSetting('director_points_limit', '500', req.clubId), 10);
   const now = new Date().toISOString();
   const batchId = `batch-${Date.now()}`;
 
@@ -148,7 +148,7 @@ router.post('/award-batch', authMiddleware, requireRole(['superadmin', 'director
       let targetUserIds = [];
 
       if (team_id) {
-        const teamUsers = db.prepare('SELECT id FROM users WHERE team_id = ? AND active = 1').all(team_id);
+        const teamUsers = db.prepare('SELECT id FROM users WHERE team_id = ? AND active = 1 AND club_id = ?').all(team_id, req.clubId);
         targetUserIds = teamUsers.map(u => u.id);
       } else if (Array.isArray(user_ids) && user_ids.length > 0) {
         targetUserIds = user_ids;
@@ -160,13 +160,13 @@ router.post('/award-batch', authMiddleware, requireRole(['superadmin', 'director
         throw new Error('Nenhum participante selecionado para o lançamento em lote.');
       }
 
-      const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1').get();
+      const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1 AND club_id = ?').get(req.clubId);
       const cycleId = activeCycle ? activeCycle.id : null;
 
       const processed = [];
 
       for (const uid of targetUserIds) {
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
+        const user = db.prepare('SELECT * FROM users WHERE id = ? AND club_id = ?').get(uid, req.clubId);
         if (!user || !user.active) continue;
 
         // Valor a ser adicionado
@@ -195,9 +195,9 @@ router.post('/award-batch', authMiddleware, requireRole(['superadmin', 'director
           .run(newBal, newTotal, now, user.id);
 
         const txRes = db.prepare(`
-          INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, batch_id, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(user.id, user.team_id, userAmount, newBal, type, reason.trim(), actor.id, cycleId, batchId, now);
+          INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, batch_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(req.clubId, user.id, user.team_id, userAmount, newBal, type, reason.trim(), actor.id, cycleId, batchId, now);
 
         processed.push({
           txId: Number(txRes.lastInsertRowid),
@@ -242,9 +242,9 @@ router.get('/transactions', authMiddleware, (req, res) => {
     LEFT JOIN users u ON pt.user_id = u.id
     LEFT JOIN teams t ON pt.team_id = t.id
     LEFT JOIN users a ON pt.actor_id = a.id
-    WHERE 1=1
+    WHERE pt.club_id = ?
   `;
-  const params = [];
+  const params = [req.clubId];
 
   // Se for participante, só pode ver seu próprio extrato!
   if (user.role === 'participant') {
@@ -272,8 +272,8 @@ router.get('/transactions', authMiddleware, (req, res) => {
   const transactions = db.prepare(query).all(...params);
 
   // Totalizador para paginação
-  let countQuery = 'SELECT COUNT(*) as total FROM point_transactions WHERE 1=1';
-  const countParams = [];
+  let countQuery = 'SELECT COUNT(*) as total FROM point_transactions WHERE club_id = ?';
+  const countParams = [req.clubId];
   if (user.role === 'participant') {
     countQuery += ' AND user_id = ?';
     countParams.push(user.id);
@@ -297,18 +297,18 @@ router.post('/revert/:txId', authMiddleware, requireRole('superadmin'), (req, re
 
   try {
     const result = withTransaction(() => {
-      const originalTx = db.prepare('SELECT * FROM point_transactions WHERE id = ?').get(txId);
+      const originalTx = db.prepare('SELECT * FROM point_transactions WHERE id = ? AND club_id = ?').get(txId, req.clubId);
       if (!originalTx) throw new Error('Transação não encontrada.');
       if (originalTx.is_reverted) throw new Error('Esta transação já foi estornada anteriormente.');
 
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(originalTx.user_id);
+      const user = db.prepare('SELECT * FROM users WHERE id = ? AND club_id = ?').get(originalTx.user_id, req.clubId);
       if (!user) throw new Error('Usuário associado à transação não encontrado.');
 
       // O valor da reversão é o inverso exato da transação original
       const reverseAmount = -originalTx.amount;
       const newBal = user.points_balance + reverseAmount;
 
-      const allowNegative = getSetting('allow_negative_balance', 'false') === 'true';
+      const allowNegative = getSetting('allow_negative_balance', 'false', req.clubId) === 'true';
       if (newBal < 0 && !allowNegative) {
         throw new Error(`A reversão deixaria o participante com saldo negativo (${newBal} pts).`);
       }
@@ -324,9 +324,10 @@ router.post('/revert/:txId', authMiddleware, requireRole('superadmin'), (req, re
 
       // Inserir registro compensatório no extrato
       const compTx = db.prepare(`
-        INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
-        VALUES (?, ?, ?, ?, 'correction', ?, ?, ?, ?)
+        INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, cycle_id, created_at)
+        VALUES (?, ?, ?, ?, ?, 'correction', ?, ?, ?, ?)
       `).run(
+        req.clubId,
         user.id,
         user.team_id,
         reverseAmount,

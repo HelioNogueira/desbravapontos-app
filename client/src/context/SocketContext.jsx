@@ -33,9 +33,13 @@ export function SocketProvider({ children }) {
     };
   }, []);
 
-  // Ouvir notificações específicas do usuário atual (ex: lance superado e reembolso recebido)
+  // Entrar na sala do clube e ouvir notificações específicas do usuário atual
   useEffect(() => {
     if (!socket || !user) return;
+
+    if (user.club_id) {
+      socket.emit('join_club', user.club_id);
+    }
 
     const outbidEvent = `user_outbid_${user.id}`;
     const handleOutbid = (data) => {

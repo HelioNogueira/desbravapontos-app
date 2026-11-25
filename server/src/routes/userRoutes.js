@@ -14,9 +14,9 @@ router.get('/', authMiddleware, (req, res) => {
            t.name as team_name, t.color as team_color
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
-    WHERE 1=1
+    WHERE u.club_id = ?
   `;
-  const params = [];
+  const params = [req.clubId];
 
   if (team_id) {
     query += ' AND u.team_id = ?';
@@ -55,20 +55,20 @@ router.post('/', authMiddleware, requireRole('superadmin'), (req, res) => {
 
   const result = withTransaction(() => {
     const insertRes = db.prepare(`
-      INSERT INTO users (name, email, password_hash, role, team_id, active, points_balance, total_points, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
-    `).run(name.trim(), email.trim().toLowerCase(), passHash, role, team_id || null, initial_points || 0, initial_points || 0, now, now);
+      INSERT INTO users (club_id, name, email, password_hash, role, team_id, active, points_balance, total_points, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    `).run(req.clubId, name.trim(), email.trim().toLowerCase(), passHash, role, team_id || null, initial_points || 0, initial_points || 0, now, now);
 
     const newUserId = Number(insertRes.lastInsertRowid);
 
     if (initial_points > 0) {
       db.prepare(`
-        INSERT INTO point_transactions (user_id, team_id, amount, balance_after, type, reason, actor_id, created_at)
-        VALUES (?, ?, ?, ?, 'manual', 'Saldo inicial de cadastro', ?, ?)
-      `).run(newUserId, team_id || null, initial_points, initial_points, req.user.id, now);
+        INSERT INTO point_transactions (club_id, user_id, team_id, amount, balance_after, type, reason, actor_id, created_at)
+        VALUES (?, ?, ?, ?, ?, 'manual', 'Saldo inicial de cadastro', ?, ?)
+      `).run(req.clubId, newUserId, team_id || null, initial_points, initial_points, req.user.id, now);
     }
 
-    logAudit(req.user.id, 'CREATE_USER', 'users', newUserId, { name, email, role, team_id });
+    logAudit(req.user.id, 'CREATE_USER', 'users', newUserId, { name, email, role, team_id }, req.clubId);
     return newUserId;
   });
 
@@ -87,7 +87,7 @@ router.put('/:id', authMiddleware, requireRole('superadmin'), (req, res) => {
   const userId = req.params.id;
   const { name, email, role, team_id, active } = req.body;
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT * FROM users WHERE id = ? AND club_id = ?').get(userId, req.clubId);
   if (!user) {
     return res.status(404).json({ error: 'Usuário não encontrado.' });
   }
@@ -135,8 +135,8 @@ router.patch('/:id/status', authMiddleware, requireRole('superadmin'), (req, res
   }
 
   const now = new Date().toISOString();
-  db.prepare('UPDATE users SET active = ?, updated_at = ? WHERE id = ?').run(active ? 1 : 0, now, userId);
-  logAudit(req.user.id, active ? 'UNBLOCK_USER' : 'BLOCK_USER', 'users', userId, { active });
+  db.prepare('UPDATE users SET active = ?, updated_at = ? WHERE id = ? AND club_id = ?').run(active ? 1 : 0, now, userId, req.clubId);
+  logAudit(req.user.id, active ? 'UNBLOCK_USER' : 'BLOCK_USER', 'users', userId, { active }, req.clubId);
 
   return res.json({ message: active ? 'Conta ativada com sucesso.' : 'Conta bloqueada com sucesso.' });
 });
@@ -153,8 +153,8 @@ router.patch('/:id/password', authMiddleware, requireRole('superadmin'), (req, r
   const hash = hashPassword(new_password);
   const now = new Date().toISOString();
 
-  db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(hash, now, userId);
-  logAudit(req.user.id, 'RESET_PASSWORD', 'users', userId, 'Senha redefinida pelo Superadmin.');
+  db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND club_id = ?').run(hash, now, userId, req.clubId);
+  logAudit(req.user.id, 'RESET_PASSWORD', 'users', userId, 'Senha redefinida pelo Superadmin.', req.clubId);
 
   return res.json({ message: 'Senha redefinida com sucesso.' });
 });
@@ -167,7 +167,7 @@ router.delete('/:id', authMiddleware, requireRole('superadmin'), (req, res) => {
     return res.status(400).json({ error: 'Você não pode excluir sua própria conta de Super Administrador.' });
   }
 
-  const user = db.prepare('SELECT id, name FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT id, name FROM users WHERE id = ? AND club_id = ?').get(userId, req.clubId);
   if (!user) {
     return res.status(404).json({ error: 'Usuário não encontrado.' });
   }

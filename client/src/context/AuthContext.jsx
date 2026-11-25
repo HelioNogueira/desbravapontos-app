@@ -5,6 +5,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [club, setClub] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('desbravapontos_token') || null);
   const [loading, setLoading] = useState(true);
 
@@ -18,6 +19,7 @@ export function AuthProvider({ children }) {
       try {
         const data = await api.getMe();
         setUser(data.user);
+        setClub(data.club || null);
       } catch (err) {
         console.warn('Sessão expirada:', err);
         logout();
@@ -33,6 +35,10 @@ export function AuthProvider({ children }) {
     localStorage.setItem('desbravapontos_token', data.token);
     setToken(data.token);
     setUser(data.user);
+    try {
+      const me = await api.getMe();
+      setClub(me.club || null);
+    } catch (_) {}
     return data.user;
   };
 
@@ -41,7 +47,20 @@ export function AuthProvider({ children }) {
     localStorage.setItem('desbravapontos_token', data.token);
     setToken(data.token);
     setUser(data.user);
+    try {
+      const me = await api.getMe();
+      setClub(me.club || null);
+    } catch (_) {}
     return data.user;
+  };
+
+  const registerClub = async (clubData) => {
+    const data = await api.registerClub(clubData);
+    localStorage.setItem('desbravapontos_token', data.token);
+    setToken(data.token);
+    setUser(data.user);
+    setClub(data.club || null);
+    return data;
   };
 
   const loginWithGoogle = async (googlePayload) => {
@@ -50,6 +69,10 @@ export function AuthProvider({ children }) {
       localStorage.setItem('desbravapontos_token', data.token);
       setToken(data.token);
       setUser(data.user);
+      try {
+        const me = await api.getMe();
+        setClub(me.club || null);
+      } catch (_) {}
     }
     return data;
   };
@@ -58,6 +81,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('desbravapontos_token');
     setToken(null);
     setUser(null);
+    setClub(null);
   };
 
   const updateUserBalance = (newBalance) => {
@@ -74,6 +98,7 @@ export function AuthProvider({ children }) {
     try {
       const data = await api.getMe();
       setUser(data.user);
+      setClub(data.club || null);
     } catch (_) {}
   };
 
@@ -81,15 +106,19 @@ export function AuthProvider({ children }) {
   const isDirector = user?.role === 'director';
   const isParticipant = user?.role === 'participant';
   const canAwardPoints = isSuperAdmin || isDirector;
+  const isPlatformAdmin = Boolean(user?.is_platform_admin);
+  const isClubExpired = Boolean(club?.isExpired && !isPlatformAdmin);
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        club,
         token,
         loading,
         login,
         register,
+        registerClub,
         loginWithGoogle,
         logout,
         updateUserBalance,
@@ -98,7 +127,9 @@ export function AuthProvider({ children }) {
         isSuperAdmin,
         isDirector,
         isParticipant,
-        canAwardPoints
+        canAwardPoints,
+        isPlatformAdmin,
+        isClubExpired
       }}
     >
       {children}
