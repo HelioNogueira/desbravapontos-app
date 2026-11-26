@@ -5,7 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const { Server: SocketIOServer } = require('socket.io');
 
-const { initDatabase } = require('./db');
+const { initDatabase, isPostgres } = require('./db');
 const { seedDatabase } = require('./seed');
 const { startAuctionEngine } = require('./auctionEngine');
 
@@ -64,15 +64,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Inicializar banco de dados persistente
-initDatabase();
-if (process.env.SEED_DEMO_DATA === 'true') {
-  seedDatabase();
-}
-
-// Iniciar o motor em tempo real de leilões
-startAuctionEngine(io);
-
 // Registro das Rotas da API
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -89,6 +80,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     app: 'DesbravaPontos & Leilão Virtual',
+    database: isPostgres ? 'postgresql' : 'sqlite',
     timestamp: new Date().toISOString()
   });
 });
@@ -103,13 +95,27 @@ if (fs.existsSync(clientDistPath)) {
 }
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`=======================================================`);
-  console.log(`⚔️  DESBRAVAPONTOS & LEILÃO VIRTUAL - SERVIDOR ATIVO  ⚔️`);
-  console.log(`   Porta: http://localhost:${PORT}`);
-  console.log(`   Status: Banco de dados SQLite persistente conectado`);
-  console.log(`   Motor de Leilão em tempo real rodando (1s tick)`);
-  console.log(`=======================================================`);
+
+async function bootstrap() {
+  await initDatabase();
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    await seedDatabase();
+  }
+  startAuctionEngine(io);
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`=======================================================`);
+    console.log(`⚔️  DESBRAVAPONTOS & LEILÃO VIRTUAL - SERVIDOR ATIVO  ⚔️`);
+    console.log(`   Porta: http://localhost:${PORT}`);
+    console.log(`   Banco: ${isPostgres ? 'PostgreSQL (Persistente na Nuvem)' : 'SQLite local'}`);
+    console.log(`   Motor de Leilão em tempo real rodando (1s tick)`);
+    console.log(`=======================================================`);
+  });
+}
+
+bootstrap().catch((err) => {
+  console.error('Falha crítica ao iniciar o servidor:', err);
+  process.exit(1);
 });
 
 module.exports = { app, server, io };

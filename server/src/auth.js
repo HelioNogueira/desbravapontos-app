@@ -88,7 +88,7 @@ function isClubExpired(club) {
   return getGraceInfo(club).isExpired;
 }
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Acesso não autorizado. Token ausente.' });
@@ -97,10 +97,10 @@ function authMiddleware(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare(`
+    const user = await db.get(`
       SELECT id, name, email, role, club_role, team_id, club_id, is_platform_admin, active, points_balance, total_points
       FROM users WHERE id = ?
-    `).get(decoded.id);
+    `, decoded.id);
     if (!user) {
       return res.status(401).json({ error: 'Usuário não encontrado.' });
     }
@@ -109,7 +109,7 @@ function authMiddleware(req, res, next) {
     }
 
     const club = user.club_id
-      ? db.prepare('SELECT id, name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members FROM clubs WHERE id = ?').get(user.club_id)
+      ? await db.get('SELECT id, name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members FROM clubs WHERE id = ?', user.club_id)
       : null;
 
     const grace = !user.is_platform_admin ? getGraceInfo(club) : { isExpired: false, inGracePeriod: false, graceEndsAt: null };

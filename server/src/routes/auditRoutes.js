@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { db, getSetting, setSetting, logAudit } = require('../db');
+const { db, setSetting, logAudit } = require('../db');
 const { authMiddleware, requireRole } = require('../auth');
 
-// GET /api/audit/logs
-// Consultar histórico completo de atividades (Superadmin)
-router.get('/logs', authMiddleware, requireRole('superadmin'), (req, res) => {
+router.get('/logs', authMiddleware, requireRole('superadmin'), async (req, res) => {
   const { limit = 50, offset = 0, action } = req.query;
 
   let query = `
@@ -24,30 +22,22 @@ router.get('/logs', authMiddleware, requireRole('superadmin'), (req, res) => {
   query += ' ORDER BY al.id DESC LIMIT ? OFFSET ?';
   params.push(parseInt(limit, 10), parseInt(offset, 10));
 
-  const logs = db.prepare(query).all(...params);
-  const total = db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE club_id = ?').get(req.clubId).count;
+  const logs = await db.all(query, ...params);
+  const totalRow = await db.get('SELECT COUNT(*) as count FROM audit_logs WHERE club_id = ?', req.clubId);
 
-  return res.json({ logs, total });
+  return res.json({ logs, total: Number(totalRow.count) });
 });
 
-// GET /api/audit/settings
-// Obter todas as configurações do sistema do clube atual
-router.get('/settings', authMiddleware, (req, res) => {
-  const globalRows = db.prepare('SELECT key, value FROM app_settings').all();
-  const clubRows = db.prepare('SELECT key, value FROM club_settings WHERE club_id = ?').all(req.clubId);
+router.get('/settings', authMiddleware, async (req, res) => {
+  const globalRows = await db.all('SELECT key, value FROM app_settings');
+  const clubRows = await db.all('SELECT key, value FROM club_settings WHERE club_id = ?', req.clubId);
   const settings = {};
-  for (const r of globalRows) {
-    settings[r.key] = r.value;
-  }
-  for (const r of clubRows) {
-    settings[r.key] = r.value;
-  }
+  for (const r of globalRows) settings[r.key] = r.value;
+  for (const r of clubRows) settings[r.key] = r.value;
   return res.json({ settings });
 });
 
-// PUT /api/audit/settings
-// Atualizar configurações críticas do clube (Apenas Superadmin)
-router.put('/settings', authMiddleware, requireRole('superadmin'), (req, res) => {
+router.put('/settings', authMiddleware, requireRole('superadmin'), async (req, res) => {
   const { settings } = req.body;
   if (!settings || typeof settings !== 'object') {
     return res.status(400).json({ error: 'Configurações inválidas.' });
@@ -55,14 +45,13 @@ router.put('/settings', authMiddleware, requireRole('superadmin'), (req, res) =>
 
   for (const [key, value] of Object.entries(settings)) {
     if (key === 'google_client_id') {
-      if (req.isPlatformAdmin) setSetting(key, value);
+      if (req.isPlatformAdmin) await setSetting(key, value);
     } else {
-      setSetting(key, value, req.clubId);
+      await setSetting(key, value, req.clubId);
     }
   }
 
-  logAudit(req.user.id, 'UPDATE_SETTINGS', 'club_settings', req.clubId, settings, req.clubId);
-
+  await logAudit(req.user.id, 'UPDATE_SETTINGS', 'club_settings', req.clubId, settings, req.clubId);
   return res.json({ message: 'Configurações atualizadas com sucesso.' });
 });
 

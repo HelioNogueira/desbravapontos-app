@@ -3,26 +3,21 @@ const router = express.Router();
 const { db, getSetting } = require('../db');
 const { authMiddleware } = require('../auth');
 
-// GET /api/stats/dashboard
-// KPIs e dados consolidados para o Painel Principal (Item 7 da especificação)
-router.get('/dashboard', authMiddleware, (req, res) => {
+router.get('/dashboard', authMiddleware, async (req, res) => {
   const clubId = req.clubId;
-  const activeCycle = db.prepare('SELECT * FROM cycles WHERE is_active = 1 AND club_id = ?').get(clubId);
-  const scoreMode = getSetting('team_score_mode', 'sum', clubId);
+  const activeCycle = await db.get('SELECT * FROM cycles WHERE is_active = 1 AND club_id = ?', clubId);
+  const scoreMode = await getSetting('team_score_mode', 'sum', clubId);
 
-  // 1. Total de participantes ativos
-  const totalParticipants = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'participant' AND active = 1 AND club_id = ?").get(clubId).count;
+  const totalParticipantsRow = await db.get("SELECT COUNT(*) as count FROM users WHERE role = 'participant' AND active = 1 AND club_id = ?", clubId);
+  const totalTeamsRow = await db.get('SELECT COUNT(*) as count FROM teams WHERE club_id = ?', clubId);
+  const indPointsRow = await db.get("SELECT COALESCE(SUM(points_balance), 0) as total FROM users WHERE role = 'participant' AND active = 1 AND club_id = ?", clubId);
+  const colPointsRow = await db.get('SELECT COALESCE(SUM(collective_balance), 0) as total FROM teams WHERE club_id = ?', clubId);
 
-  // 2. Número de equipes
-  const totalTeams = db.prepare('SELECT COUNT(*) as count FROM teams WHERE club_id = ?').get(clubId).count;
-
-  // 3. Total de pontos em circulação (saldo de todos os participantes ativos + coletivo se ativo)
-  const indPoints = db.prepare("SELECT COALESCE(SUM(points_balance), 0) as total FROM users WHERE role = 'participant' AND active = 1 AND club_id = ?").get(clubId).total;
-  const colPoints = db.prepare('SELECT COALESCE(SUM(collective_balance), 0) as total FROM teams WHERE club_id = ?').get(clubId).total;
+  const indPoints = Number(indPointsRow.total || 0);
+  const colPoints = Number(colPointsRow.total || 0);
   const totalPointsInCirculation = scoreMode === 'collective' ? (indPoints + colPoints) : indPoints;
 
-  // 4. Rodada atualmente ativa
-  const activeAuction = db.prepare(`
+  const activeAuction = await db.get(`
     SELECT a.*,
            (SELECT COUNT(*) FROM auction_items WHERE auction_id = a.id) as items_count,
            (SELECT COUNT(*) FROM auction_bids WHERE auction_id = a.id) as total_bids
@@ -30,30 +25,27 @@ router.get('/dashboard', authMiddleware, (req, res) => {
     WHERE a.status = 'active' AND a.club_id = ?
     ORDER BY a.start_time ASC
     LIMIT 1
-  `).get(clubId);
+  `, clubId);
 
   let activeAuctionFormatted = null;
   if (activeAuction) {
     const endMs = new Date(activeAuction.end_time).getTime();
-    const nowMs = Date.now();
     activeAuctionFormatted = {
       ...activeAuction,
-      remaining_seconds: Math.max(0, Math.floor((endMs - nowMs) / 1000))
+      remaining_seconds: Math.max(0, Math.floor((endMs - Date.now()) / 1000))
     };
   }
 
-  // 5. Próximo leilão programado
-  const nextScheduledAuction = db.prepare(`
+  const nextScheduledAuction = await db.get(`
     SELECT a.*,
            (SELECT COUNT(*) FROM auction_items WHERE auction_id = a.id) as items_count
     FROM auctions a
     WHERE a.status = 'scheduled' AND a.club_id = ?
     ORDER BY a.start_time ASC
     LIMIT 1
-  `).get(clubId);
+  `, clubId);
 
-  // 6. Ranking das Equipes
-  const teamsRank = db.prepare(`
+  const teamsRank = await db.all(`
     SELECT t.id, t.name, t.color, t.icon, t.motto, t.collective_balance,
            COUNT(u.id) as members_count,
            COALESCE(SUM(CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END), 0) as total_points,
@@ -63,22 +55,28 @@ router.get('/dashboard', authMiddleware, (req, res) => {
     WHERE t.club_id = ?
     GROUP BY t.id
     ORDER BY total_points DESC, total_wallet_balance DESC, t.name ASC
-  `).all(clubId);
+  `, clubId);
 
-  const formattedTeams = teamsRank.map((t, i) => ({
-    ...t,
-    rank: i + 1,
-    effective_points: scoreMode === 'collective' ? t.collective_balance : t.total_points,
-    wallet_points: t.total_wallet_balance
-  }));
+  const formattedTeams = teamsRank.map((t, i) => {
+    const totalPts = Number(t.total_points || 0);
+    const walletPts = Number(t.total_wallet_balance || 0);
+    return {
+      ...t,
+      members_count: Number(t.members_count || 0),
+      total_points: totalPts,
+      total_wallet_balance: walletPts,
+      rank: i + 1,
+      effective_points: scoreMode === 'collective' ? Number(t.collective_balance || 0) : totalPts,
+      wallet_points: walletPts
+    };
+  });
 
   if (scoreMode === 'collective') {
     formattedTeams.sort((a, b) => b.effective_points - a.effective_points);
     formattedTeams.forEach((t, i) => { t.rank = i + 1; });
   }
 
-  // 7. Ranking dos Participantes (Top 10)
-  const topParticipants = db.prepare(`
+  const topParticipants = (await db.all(`
     SELECT u.id, u.name, u.email, u.points_balance,
            CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END as total_points,
            u.avatar,
@@ -88,10 +86,9 @@ router.get('/dashboard', authMiddleware, (req, res) => {
     WHERE u.role = 'participant' AND u.active = 1 AND u.club_id = ?
     ORDER BY CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END DESC, u.points_balance DESC, u.name ASC
     LIMIT 10
-  `).all(clubId).map((p, i) => ({ ...p, rank: i + 1 }));
+  `, clubId)).map((p, i) => ({ ...p, rank: i + 1 }));
 
-  // 8. Últimas movimentações de pontos
-  const recentTransactions = db.prepare(`
+  const recentTransactions = await db.all(`
     SELECT pt.*,
            u.name as user_name,
            t.name as team_name, t.color as team_color,
@@ -103,12 +100,12 @@ router.get('/dashboard', authMiddleware, (req, res) => {
     WHERE pt.club_id = ?
     ORDER BY pt.id DESC
     LIMIT 8
-  `).all(clubId);
+  `, clubId);
 
   return res.json({
     kpis: {
-      total_participants: totalParticipants,
-      total_teams: totalTeams,
+      total_participants: Number(totalParticipantsRow.count || 0),
+      total_teams: Number(totalTeamsRow.count || 0),
       total_points_in_circulation: totalPointsInCirculation,
       score_mode: scoreMode
     },
@@ -121,9 +118,7 @@ router.get('/dashboard', authMiddleware, (req, res) => {
   });
 });
 
-// GET /api/stats/rankings
-// Rankings completos com paginação e busca
-router.get('/rankings', authMiddleware, (req, res) => {
+router.get('/rankings', authMiddleware, async (req, res) => {
   const { team_id } = req.query;
 
   let query = `
@@ -144,7 +139,7 @@ router.get('/rankings', authMiddleware, (req, res) => {
 
   query += ' ORDER BY CASE WHEN u.total_points > 0 THEN u.total_points ELSE u.points_balance END DESC, u.points_balance DESC, u.name ASC';
 
-  const participants = db.prepare(query).all(...params).map((p, i) => ({
+  const participants = (await db.all(query, ...params)).map((p, i) => ({
     ...p,
     rank: i + 1
   }));

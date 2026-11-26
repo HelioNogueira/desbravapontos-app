@@ -4,17 +4,16 @@ const crypto = require('node:crypto');
 const { db, getSetting, initNewClubDefaults, logAudit, withTransaction } = require('../db');
 const { verifyPassword, generateToken, authMiddleware, hashPassword, isClubExpired } = require('../auth');
 
-function resolveTargetClub(clubCode, clubId) {
+async function resolveTargetClub(clubCode, clubId) {
   if (clubCode && String(clubCode).trim()) {
-    const club = db.prepare('SELECT * FROM clubs WHERE UPPER(join_code) = UPPER(?)').get(String(clubCode).trim());
+    const club = await db.get('SELECT * FROM clubs WHERE UPPER(join_code) = UPPER(?)', String(clubCode).trim());
     return club || null;
   }
   if (clubId) {
-    const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(Number(clubId));
+    const club = await db.get('SELECT * FROM clubs WHERE id = ?', Number(clubId));
     return club || null;
   }
-  // Fallback para o clube padrão (#1) se nenhum código for informado
-  return db.prepare('SELECT * FROM clubs ORDER BY id ASC LIMIT 1').get() || null;
+  return (await db.get('SELECT * FROM clubs ORDER BY id ASC LIMIT 1')) || null;
 }
 
 function makeSlug(name) {
@@ -26,15 +25,13 @@ function makeSlug(name) {
     .replace(/(^-|-$)/g, '') || 'clube';
 }
 
-// GET /api/auth/club-by-code
-// Busca um clube pelo código de convite e retorna suas unidades
-router.get('/club-by-code', (req, res) => {
+router.get('/club-by-code', async (req, res) => {
   const { code } = req.query;
-  const club = resolveTargetClub(code, null);
+  const club = await resolveTargetClub(code, null);
   if (!club) {
     return res.status(404).json({ error: 'Código do clube não encontrado. Verifique com a diretoria.' });
   }
-  const teams = db.prepare('SELECT id, name, color, icon FROM teams WHERE club_id = ? ORDER BY name ASC').all(club.id);
+  const teams = await db.all('SELECT id, name, color, icon FROM teams WHERE club_id = ? ORDER BY name ASC', club.id);
   return res.json({
     club: {
       id: club.id,
@@ -47,8 +44,6 @@ router.get('/club-by-code', (req, res) => {
   });
 });
 
-// POST /api/auth/register-club
-// Auto-cadastro de um novo Clube na plataforma (7 dias grátis de teste)
 const CLUB_PLANS = {
   pequeno: { plan_name: 'Pequeno (até 20 membros)', monthly_price: 30.0, max_members: 20 },
   medio: { plan_name: 'Médio (21 a 59 membros)', monthly_price: 50.0, max_members: 59 },
@@ -95,7 +90,7 @@ router.post('/register-club', async (req, res) => {
     }
   }
 
-  const existingUser = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(resolvedEmail);
+  const existingUser = await db.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', resolvedEmail);
   if (existingUser) {
     return res.status(400).json({ error: 'Este e-mail já está cadastrado em um clube. Use outro e-mail ou faça login.' });
   }
@@ -104,12 +99,12 @@ router.post('/register-club', async (req, res) => {
     ? joinCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '')
     : makeSlug(clubName).toUpperCase().replace(/-/g, '').slice(0, 8) + Math.floor(100 + Math.random() * 900);
 
-  if (db.prepare('SELECT id FROM clubs WHERE UPPER(join_code) = UPPER(?)').get(finalCode)) {
+  if (await db.get('SELECT id FROM clubs WHERE UPPER(join_code) = UPPER(?)', finalCode)) {
     return res.status(400).json({ error: `O código "${finalCode}" já está em uso. Escolha outro código para o seu clube.` });
   }
 
   let slug = makeSlug(clubName);
-  if (db.prepare('SELECT id FROM clubs WHERE slug = ?').get(slug)) {
+  if (await db.get('SELECT id FROM clubs WHERE slug = ?', slug)) {
     slug = `${slug}-${Date.now().toString().slice(-4)}`;
   }
 
@@ -119,11 +114,11 @@ router.post('/register-club', async (req, res) => {
   const passwordHash = hashPassword(adminPassword || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36)));
 
   try {
-    const result = withTransaction(() => {
-      const clubRes = db.prepare(`
+    const result = await withTransaction(async () => {
+      const clubRes = await db.run(`
         INSERT INTO clubs (name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members, owner_email, created_at, updated_at)
         VALUES (?, ?, ?, 'trial', ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
         clubName.trim(),
         slug,
         finalCode,
@@ -137,19 +132,19 @@ router.post('/register-club', async (req, res) => {
       );
 
       const clubId = Number(clubRes.lastInsertRowid);
-      initNewClubDefaults(clubId, clubName.trim());
+      await initNewClubDefaults(clubId, clubName.trim());
 
-      const userRes = db.prepare(`
+      const userRes = await db.run(`
         INSERT INTO users (club_id, name, email, password_hash, role, club_role, active, points_balance, total_points, avatar, google_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'superadmin', 'Diretor Geral / Fundador', 1, 0, 0, ?, ?, ?, ?)
-      `).run(clubId, resolvedName, resolvedEmail, passwordHash, googlePic, googleSub, nowIso, nowIso);
+      `, clubId, resolvedName, resolvedEmail, passwordHash, googlePic, googleSub, nowIso, nowIso);
 
       const userId = Number(userRes.lastInsertRowid);
-      logAudit(userId, 'CLUB_SELF_REGISTERED', 'clubs', clubId, { clubName: clubName.trim(), joinCode: finalCode }, clubId);
+      await logAudit(userId, 'CLUB_SELF_REGISTERED', 'clubs', clubId, { clubName: clubName.trim(), joinCode: finalCode }, clubId);
 
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+      const user = await db.get('SELECT * FROM users WHERE id = ?', userId);
       delete user.password_hash;
-      const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId);
+      const club = await db.get('SELECT * FROM clubs WHERE id = ?', clubId);
       return { user, club };
     });
 
@@ -166,16 +161,12 @@ router.post('/register-club', async (req, res) => {
   }
 });
 
-// GET /api/auth/google-client-id
-// Retorna a chave do Google Client ID configurada para a aplicação
-router.get('/google-client-id', (req, res) => {
-  const clientId = process.env.GOOGLE_CLIENT_ID || getSetting('google_client_id', '');
+router.get('/google-client-id', async (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID || (await getSetting('google_client_id', ''));
   return res.json({ clientId });
 });
 
-// Helper para validar o token JWT emitido pelo Google Identity Services
 async function verifyGoogleToken(idToken) {
-  // 1. Tentar validação oficial nos servidores do Google
   try {
     const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
     if (googleRes.ok) {
@@ -186,7 +177,6 @@ async function verifyGoogleToken(idToken) {
     console.warn('Falha na chamada remota do Google Tokeninfo:', err.message);
   }
 
-  // 2. Fallback defensivo: decodificação de payload JWT (caso ambiente offline ou mock)
   try {
     const parts = idToken.split('.');
     if (parts.length === 3) {
@@ -201,8 +191,6 @@ async function verifyGoogleToken(idToken) {
   throw new Error('Token de autenticação do Google inválido.');
 }
 
-// POST /api/auth/google
-// Login e Cadastro Rápido com Google
 router.post('/google', async (req, res) => {
   const {
     credential,
@@ -233,23 +221,21 @@ router.post('/google', async (req, res) => {
     return res.status(400).json({ error: 'Não foi possível obter o e-mail da conta Google.' });
   }
 
-  // 1. Verificar se o usuário já possui cadastro com este e-mail
-  const existingUser = db.prepare(`
+  const existingUser = await db.get(`
     SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
     WHERE LOWER(u.email) = ?
-  `).get(email);
+  `, email);
 
   if (existingUser) {
     if (!existingUser.active) {
       return res.status(403).json({ error: 'Sua conta está desativada. Contate a diretoria do Clube.' });
     }
 
-    // Se já tinha conta, atualiza google_id se não estiver preenchido
     if (googleData.sub && !existingUser.google_id) {
       try {
-        db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(googleData.sub, existingUser.id);
+        await db.run('UPDATE users SET google_id = ? WHERE id = ?', googleData.sub, existingUser.id);
       } catch (_) {}
     }
 
@@ -263,11 +249,8 @@ router.post('/google', async (req, res) => {
     });
   }
 
-  // 2. Se o usuário é NOVO e ainda não enviou Nome/Sobrenome customizados:
-  // Solicita que o usuário confirme o Nome e Sobrenome para não pegar apenas o nome do e-mail
   const hasProvidedName = Boolean((firstName && firstName.trim()) || (lastName && lastName.trim()) || (name && name.trim()));
   if (!hasProvidedName) {
-    // Sugestão inicial separando nome e sobrenome do Google
     const googleGiven = googleData.given_name || (googleData.name ? googleData.name.split(' ')[0] : '');
     const googleFamily = googleData.family_name || (googleData.name ? googleData.name.split(' ').slice(1).join(' ') : '');
 
@@ -283,30 +266,29 @@ router.post('/google', async (req, res) => {
     });
   }
 
-  // 3. Cadastrar novo usuário com o Nome e Sobrenome escolhidos pelo desbravador
-  const targetClub = resolveTargetClub(club_code, club_id);
+  const targetClub = await resolveTargetClub(club_code, club_id);
   if (!targetClub) {
     return res.status(404).json({ error: 'Código do clube não encontrado. Verifique com a diretoria do seu clube.' });
   }
   if (isClubExpired(targetClub)) {
     return res.status(402).json({ error: 'Este clube está com a assinatura suspensa ou expirada.' });
   }
-  const membersCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE club_id = ?').get(targetClub.id).count;
-  if (membersCount >= (targetClub.max_members || 100)) {
+  const membersRow = await db.get('SELECT COUNT(*) as count FROM users WHERE club_id = ?', targetClub.id);
+  if (Number(membersRow.count) >= (targetClub.max_members || 100)) {
     return res.status(403).json({ error: 'Este clube atingiu o limite máximo de membros do plano atual.' });
   }
 
   const customFullName = name?.trim() || `${(firstName || '').trim()} ${(lastName || '').trim()}`.trim() || 'Desbravador';
 
   if (role === 'director') {
-    const directorCode = getSetting('director_registration_code', 'DIRETORIA2026', targetClub.id);
+    const directorCode = await getSetting('director_registration_code', 'DIRETORIA2026', targetClub.id);
     if (!registration_code || registration_code.trim().toUpperCase() !== directorCode.toUpperCase()) {
       return res.status(403).json({
         error: 'Código de autorização da Diretoria inválido. Solicite o código ao Pastor ou Diretor.'
       });
     }
   } else if (role === 'superadmin') {
-    const superadminCode = getSetting('superadmin_registration_code', 'PASTOR2026', targetClub.id);
+    const superadminCode = await getSetting('superadmin_registration_code', 'PASTOR2026', targetClub.id);
     if (!registration_code || registration_code.trim().toUpperCase() !== superadminCode.toUpperCase()) {
       return res.status(403).json({
         error: 'Chave mestra de Pastor / Super Administrador inválida.'
@@ -324,13 +306,11 @@ router.post('/google', async (req, res) => {
   );
 
   try {
-    const newUser = withTransaction(() => {
-      const insertStmt = db.prepare(`
+    const newUser = await withTransaction(async () => {
+      const result = await db.run(`
         INSERT INTO users (club_id, name, email, password_hash, role, club_role, team_id, active, points_balance, total_points, avatar, google_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?, ?)
-      `);
-
-      const result = insertStmt.run(
+      `,
         targetClub.id,
         customFullName,
         email,
@@ -345,7 +325,7 @@ router.post('/google', async (req, res) => {
       );
 
       const newUserId = Number(result.lastInsertRowid);
-      logAudit(newUserId, 'GOOGLE_REGISTER', 'users', newUserId, {
+      await logAudit(newUserId, 'GOOGLE_REGISTER', 'users', newUserId, {
         name: customFullName,
         email,
         role,
@@ -353,12 +333,12 @@ router.post('/google', async (req, res) => {
         club_id: targetClub.id
       }, targetClub.id);
 
-      const created = db.prepare(`
+      const created = await db.get(`
         SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon
         FROM users u
         LEFT JOIN teams t ON u.team_id = t.id
         WHERE u.id = ?
-      `).get(newUserId);
+      `, newUserId);
 
       delete created.password_hash;
       return created;
@@ -377,20 +357,18 @@ router.post('/google', async (req, res) => {
   }
 });
 
-// POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
   if (!email || !password) {
     return res.status(400).json({ error: 'Informe e-mail e senha.' });
   }
 
-  const user = db.prepare(`
+  const user = await db.get(`
     SELECT u.*, t.name as team_name, t.color as team_color
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
     WHERE LOWER(u.email) = LOWER(?)
-  `).get(email.trim());
+  `, email.trim());
 
   if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
@@ -403,43 +381,31 @@ router.post('/login', (req, res) => {
   const token = generateToken(user);
   delete user.password_hash;
 
-  return res.json({
-    token,
-    user
-  });
+  return res.json({ token, user });
 });
 
-// POST /api/auth/register
-// Sistema de Cadastro de Usuários (Desbravador, Diretoria ou Super Administrador)
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const {
     name,
     email,
     password,
-    role = 'participant', // 'participant', 'director', 'superadmin'
+    role = 'participant',
     team_id,
-    club_role, // ex: "Desbravador", "Conselheiro(a)", "Diretor(a) Associado(a)", "Pastor Distrital"
+    club_role,
     registration_code,
     club_code,
     club_id
   } = req.body;
 
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'O nome completo é obrigatório.' });
-  }
-  if (!email || !email.trim()) {
-    return res.status(400).json({ error: 'O e-mail é obrigatório.' });
-  }
-  if (!password || password.length < 6) {
-    return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres.' });
-  }
+  if (!name || !name.trim()) return res.status(400).json({ error: 'O nome completo é obrigatório.' });
+  if (!email || !email.trim()) return res.status(400).json({ error: 'O e-mail é obrigatório.' });
+  if (!password || password.length < 6) return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres.' });
 
-  const validRoles = ['participant', 'director', 'superadmin'];
-  if (!validRoles.includes(role)) {
+  if (!['participant', 'director', 'superadmin'].includes(role)) {
     return res.status(400).json({ error: 'Tipo de conta inválido.' });
   }
 
-  const targetClub = resolveTargetClub(club_code, club_id);
+  const targetClub = await resolveTargetClub(club_code, club_id);
   if (!targetClub) {
     return res.status(404).json({ error: 'Código do clube não encontrado. Verifique com a diretoria.' });
   }
@@ -447,19 +413,17 @@ router.post('/register', (req, res) => {
     return res.status(402).json({ error: 'Este clube está com a assinatura suspensa ou expirada.' });
   }
 
-  // 1. Validação de Segurança por Nível
   if (role === 'director') {
-    const directorCode = getSetting('director_registration_code', 'DIRETORIA2026', targetClub.id);
+    const directorCode = await getSetting('director_registration_code', 'DIRETORIA2026', targetClub.id);
     if (!registration_code || registration_code.trim().toUpperCase() !== directorCode.toUpperCase()) {
       return res.status(403).json({
         error: 'Código de autorização da Diretoria inválido. Solicite o código ao Pastor ou Diretor Geral do Clube.'
       });
     }
   } else if (role === 'superadmin') {
-    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE club_id = ?').get(targetClub.id).count;
-    const superadminCode = getSetting('superadmin_registration_code', 'PASTOR2026', targetClub.id);
-    // Se não for o primeiro cadastro do clube, exige a chave mestra
-    if (totalUsers > 0) {
+    const totalRow = await db.get('SELECT COUNT(*) as count FROM users WHERE club_id = ?', targetClub.id);
+    const superadminCode = await getSetting('superadmin_registration_code', 'PASTOR2026', targetClub.id);
+    if (Number(totalRow.count) > 0) {
       if (!registration_code || registration_code.trim().toUpperCase() !== superadminCode.toUpperCase()) {
         return res.status(403).json({
           error: 'Chave mestra de Super Administrador (Pastor / Diretor) inválida. Acesso não autorizado.'
@@ -468,8 +432,7 @@ router.post('/register', (req, res) => {
     }
   }
 
-  // 2. Verificar duplicidade de e-mail
-  const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
+  const existing = await db.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', email.trim());
   if (existing) {
     return res.status(400).json({ error: 'Já existe uma conta cadastrada com este e-mail. Faça login.' });
   }
@@ -483,11 +446,11 @@ router.post('/register', (req, res) => {
   );
 
   try {
-    const newUserId = withTransaction(() => {
-      const insert = db.prepare(`
+    const newUserId = await withTransaction(async () => {
+      const insert = await db.run(`
         INSERT INTO users (club_id, name, email, password_hash, role, club_role, team_id, active, points_balance, total_points, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?)
-      `).run(
+      `,
         targetClub.id,
         name.trim(),
         email.trim().toLowerCase(),
@@ -500,7 +463,7 @@ router.post('/register', (req, res) => {
       );
 
       const uid = Number(insert.lastInsertRowid);
-      logAudit(uid, 'USER_REGISTERED', 'users', uid, {
+      await logAudit(uid, 'USER_REGISTERED', 'users', uid, {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         role,
@@ -512,12 +475,12 @@ router.post('/register', (req, res) => {
       return uid;
     });
 
-    const createdUser = db.prepare(`
+    const createdUser = await db.get(`
       SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon
       FROM users u
       LEFT JOIN teams t ON u.team_id = t.id
       WHERE u.id = ?
-    `).get(newUserId);
+    `, newUserId);
 
     delete createdUser.password_hash;
     const token = generateToken(createdUser);
@@ -533,70 +496,54 @@ router.post('/register', (req, res) => {
   }
 });
 
-// GET /api/auth/me
-router.get('/me', authMiddleware, (req, res) => {
-  const user = db.prepare(`
+router.get('/me', authMiddleware, async (req, res) => {
+  const user = await db.get(`
     SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon, t.collective_balance as team_collective_balance
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
     WHERE u.id = ?
-  `).get(req.user.id);
+  `, req.user.id);
 
-  if (!user) {
-    return res.status(404).json({ error: 'Usuário não encontrado.' });
-  }
+  if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
   delete user.password_hash;
   return res.json({ user, club: req.club });
 });
 
-// PUT /api/auth/profile (Permitir que TODOS os usuários atualizem sua foto de perfil e nome)
-router.put('/profile', authMiddleware, (req, res) => {
+router.put('/profile', authMiddleware, async (req, res) => {
   const { avatar, name } = req.body;
   const userId = req.user.id;
 
-  const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(userId);
-  if (!user) {
-    return res.status(404).json({ error: 'Usuário não encontrado.' });
-  }
+  const user = await db.get('SELECT id, name, email FROM users WHERE id = ?', userId);
+  if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
   const now = new Date().toISOString();
 
   if (avatar !== undefined && name !== undefined) {
-    db.prepare(`
+    await db.run(`
       UPDATE users
       SET avatar = ?,
           name = COALESCE(NULLIF(?, ''), name),
           updated_at = ?
       WHERE id = ?
-    `).run(avatar || null, name ? name.trim() : null, now, userId);
+    `, avatar || null, name ? name.trim() : null, now, userId);
   } else if (avatar !== undefined) {
-    db.prepare(`
-      UPDATE users
-      SET avatar = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).run(avatar || null, now, userId);
+    await db.run('UPDATE users SET avatar = ?, updated_at = ? WHERE id = ?', avatar || null, now, userId);
   } else if (name !== undefined && name.trim()) {
-    db.prepare(`
-      UPDATE users
-      SET name = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).run(name.trim(), now, userId);
+    await db.run('UPDATE users SET name = ?, updated_at = ? WHERE id = ?', name.trim(), now, userId);
   }
 
-  logAudit(userId, 'UPDATE_PROFILE', 'users', userId, {
+  await logAudit(userId, 'UPDATE_PROFILE', 'users', userId, {
     avatar_updated: avatar !== undefined,
     name_updated: name !== undefined
-  });
+  }, req.clubId);
 
-  const updatedUser = db.prepare(`
+  const updatedUser = await db.get(`
     SELECT u.*, t.name as team_name, t.color as team_color, t.icon as team_icon, t.collective_balance as team_collective_balance
     FROM users u
     LEFT JOIN teams t ON u.team_id = t.id
     WHERE u.id = ?
-  `).get(userId);
+  `, userId);
 
   delete updatedUser.password_hash;
   return res.json({
@@ -605,18 +552,16 @@ router.put('/profile', authMiddleware, (req, res) => {
   });
 });
 
-// GET /api/auth/public-teams (Para preencher seleção no formulário de cadastro)
-router.get('/public-teams', (req, res) => {
+router.get('/public-teams', async (req, res) => {
   const { club_code, club_id } = req.query;
-  const targetClub = resolveTargetClub(club_code, club_id);
+  const targetClub = await resolveTargetClub(club_code, club_id);
   if (!targetClub) {
     return res.json({ teams: [] });
   }
-  const teams = db.prepare('SELECT id, name, color, icon FROM teams WHERE club_id = ? ORDER BY name ASC').all(targetClub.id);
+  const teams = await db.all('SELECT id, name, color, icon FROM teams WHERE club_id = ? ORDER BY name ASC', targetClub.id);
   return res.json({ teams, club: { id: targetClub.id, name: targetClub.name, join_code: targetClub.join_code } });
 });
 
-// GET /api/auth/demo-users (Desativado para proteção da privacidade dos membros)
 router.get('/demo-users', (req, res) => {
   return res.json({ demoAccounts: [] });
 });

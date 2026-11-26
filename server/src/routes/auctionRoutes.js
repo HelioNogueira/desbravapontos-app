@@ -2,10 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { db, withTransaction, logAudit } = require('../db');
 const { authMiddleware, requireRole } = require('../auth');
-const { placeBid, setAuctionStatus, endAuction } = require('../auctionEngine');
+const { placeBid, setAuctionStatus } = require('../auctionEngine');
 
-// Listar todos os leilões
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   const { status } = req.query;
 
   let query = `
@@ -32,9 +31,8 @@ router.get('/', authMiddleware, (req, res) => {
       ELSE 4
     END, a.start_time ASC`;
 
-  const auctions = db.prepare(query).all(...params);
+  const auctions = await db.all(query, ...params);
 
-  // Calcular segundos restantes para leilões ativos
   const nowMs = Date.now();
   const formatted = auctions.map(auc => {
     let remainingSeconds = null;
@@ -44,6 +42,8 @@ router.get('/', authMiddleware, (req, res) => {
     }
     return {
       ...auc,
+      items_count: Number(auc.items_count || 0),
+      total_bids: Number(auc.total_bids || 0),
       remaining_seconds: remainingSeconds
     };
   });
@@ -51,23 +51,21 @@ router.get('/', authMiddleware, (req, res) => {
   return res.json({ auctions: formatted });
 });
 
-// Detalhes completos de um leilão
-router.get('/:id', authMiddleware, (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => {
   const auctionId = req.params.id;
 
-  const auction = db.prepare(`
+  const auction = await db.get(`
     SELECT a.*, u.name as creator_name
     FROM auctions a
     LEFT JOIN users u ON a.created_by = u.id
     WHERE a.id = ? AND a.club_id = ?
-  `).get(auctionId, req.clubId);
+  `, auctionId, req.clubId);
 
   if (!auction) {
     return res.status(404).json({ error: 'Leilão não encontrado.' });
   }
 
-  // Itens do leilão
-  const items = db.prepare(`
+  const items = await db.all(`
     SELECT i.*,
            w.name as winner_name, w.avatar as winner_avatar,
            t.name as winner_team_name, t.color as winner_team_color,
@@ -77,10 +75,9 @@ router.get('/:id', authMiddleware, (req, res) => {
     LEFT JOIN teams t ON i.current_winner_team_id = t.id
     WHERE i.auction_id = ?
     ORDER BY i.order_num ASC, i.id ASC
-  `).all(auctionId);
+  `, auctionId);
 
-  // Últimos 30 lances do leilão
-  const recentBids = db.prepare(`
+  const recentBids = await db.all(`
     SELECT b.*,
            u.name as user_name, u.avatar as user_avatar,
            t.name as team_name, t.color as team_color,
@@ -92,26 +89,24 @@ router.get('/:id', authMiddleware, (req, res) => {
     WHERE b.auction_id = ?
     ORDER BY b.id DESC
     LIMIT 30
-  `).all(auctionId);
+  `, auctionId);
 
   const endMs = new Date(auction.end_time).getTime();
-  const nowMs = Date.now();
   const remainingSeconds = auction.status === 'active'
-    ? Math.max(0, Math.floor((endMs - nowMs) / 1000))
+    ? Math.max(0, Math.floor((endMs - Date.now()) / 1000))
     : 0;
 
   return res.json({
     auction: {
       ...auction,
       remaining_seconds: remainingSeconds,
-      items,
+      items: items.map(it => ({ ...it, bids_count: Number(it.bids_count || 0) })),
       recent_bids: recentBids
     }
   });
 });
 
-// Criar leilão (Superadmin ou Diretoria)
-router.post('/', authMiddleware, requireRole(['superadmin', 'director']), (req, res) => {
+router.post('/', authMiddleware, requireRole(['superadmin', 'director']), async (req, res) => {
   const {
     title,
     description,
@@ -122,34 +117,27 @@ router.post('/', authMiddleware, requireRole(['superadmin', 'director']), (req, 
     items = []
   } = req.body;
 
-  if (!title || !title.trim()) {
-    return res.status(400).json({ error: 'Título do leilão é obrigatório.' });
-  }
-  if (!start_time) {
-    return res.status(400).json({ error: 'Data e horário de início são obrigatórios.' });
-  }
+  if (!title || !title.trim()) return res.status(400).json({ error: 'Título do leilão é obrigatório.' });
+  if (!start_time) return res.status(400).json({ error: 'Data e horário de início são obrigatórios.' });
 
   const durationMin = parseInt(duration_minutes, 10) || 30;
   const startDt = new Date(start_time);
-  if (isNaN(startDt.getTime())) {
-    return res.status(400).json({ error: 'Data de início inválida.' });
-  }
+  if (isNaN(startDt.getTime())) return res.status(400).json({ error: 'Data de início inválida.' });
 
   const endDt = new Date(startDt.getTime() + durationMin * 60 * 1000);
   const now = new Date();
   const status = startDt <= now && now < endDt ? 'active' : (startDt > now ? 'scheduled' : 'ended');
   const nowIso = now.toISOString();
 
-  // Ciclo ativo
-  const activeCycle = db.prepare('SELECT id FROM cycles WHERE is_active = 1 AND club_id = ?').get(req.clubId);
+  const activeCycle = await db.get('SELECT id FROM cycles WHERE is_active = 1 AND club_id = ?', req.clubId);
   const cycleId = activeCycle ? activeCycle.id : null;
 
   try {
-    const newAuctionId = withTransaction(() => {
-      const result = db.prepare(`
+    const newAuctionId = await withTransaction(async () => {
+      const result = await db.run(`
         INSERT INTO auctions (club_id, title, description, round_number, mode, status, start_time, end_time, duration_minutes, cycle_id, created_by, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
         req.clubId,
         title.trim(),
         description ? description.trim() : '',
@@ -166,17 +154,15 @@ router.post('/', authMiddleware, requireRole(['superadmin', 'director']), (req, 
 
       const aId = Number(result.lastInsertRowid);
 
-      // Inserir itens se fornecidos
       if (Array.isArray(items) && items.length > 0) {
-        const itemStmt = db.prepare(`
-          INSERT INTO auction_items (auction_id, title, description, image_url, starting_bid, bid_step, current_bid, status, order_num)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
-        `);
-
-        items.forEach((it, idx) => {
+        for (let idx = 0; idx < items.length; idx++) {
+          const it = items[idx];
           const starting = parseInt(it.starting_bid, 10) || 10;
           const step = parseInt(it.bid_step, 10) || 5;
-          itemStmt.run(
+          await db.run(`
+            INSERT INTO auction_items (auction_id, title, description, image_url, starting_bid, bid_step, current_bid, status, order_num)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
+          `,
             aId,
             it.title.trim(),
             it.description ? it.description.trim() : '',
@@ -186,10 +172,10 @@ router.post('/', authMiddleware, requireRole(['superadmin', 'director']), (req, 
             starting,
             idx + 1
           );
-        });
+        }
       }
 
-      logAudit(req.user.id, 'CREATE_AUCTION', 'auctions', aId, { title, mode, durationMin });
+      await logAudit(req.user.id, 'CREATE_AUCTION', 'auctions', aId, { title, mode, durationMin }, req.clubId);
       return aId;
     });
 
@@ -203,19 +189,18 @@ router.post('/', authMiddleware, requireRole(['superadmin', 'director']), (req, 
   }
 });
 
-// Dar lance no leilão (Participante, Diretor ou Superadmin)
-router.post('/:id/bid', authMiddleware, (req, res) => {
+router.post('/:id/bid', authMiddleware, async (req, res) => {
   const auctionId = req.params.id;
   const { item_id, amount, is_team_bid = false } = req.body;
   const user = req.user;
 
-  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
+  const auction = await db.get('SELECT id FROM auctions WHERE id = ? AND club_id = ?', auctionId, req.clubId);
   if (!auction) {
     return res.status(404).json({ error: 'Leilão não encontrado neste clube.' });
   }
 
   try {
-    const result = placeBid({
+    const result = await placeBid({
       auctionId: Number(auctionId),
       itemId: Number(item_id),
       userId: user.id,
@@ -233,18 +218,15 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   }
 });
 
-// Alterar status do leilão: Pausar, Retomar, Cancelar, Encerrar (Superadmin ou Diretoria)
-router.post('/:id/status', authMiddleware, requireRole(['superadmin', 'director']), (req, res) => {
+router.post('/:id/status', authMiddleware, requireRole(['superadmin', 'director']), async (req, res) => {
   const auctionId = req.params.id;
   const { status, reason = '' } = req.body;
 
-  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
-  if (!auction) {
-    return res.status(404).json({ error: 'Leilão não encontrado.' });
-  }
+  const auction = await db.get('SELECT id FROM auctions WHERE id = ? AND club_id = ?', auctionId, req.clubId);
+  if (!auction) return res.status(404).json({ error: 'Leilão não encontrado.' });
 
   try {
-    setAuctionStatus(Number(auctionId), status, reason, req.user.id);
+    await setAuctionStatus(Number(auctionId), status, reason, req.user.id);
     return res.json({
       success: true,
       message: `Status do leilão alterado para "${status}" com sucesso.`
@@ -254,15 +236,12 @@ router.post('/:id/status', authMiddleware, requireRole(['superadmin', 'director'
   }
 });
 
-// Adicionar item a um leilão (Superadmin ou Diretoria)
-router.post('/:id/items', authMiddleware, requireRole(['superadmin', 'director']), (req, res) => {
+router.post('/:id/items', authMiddleware, requireRole(['superadmin', 'director']), async (req, res) => {
   const auctionId = req.params.id;
   const { title, description, image_url, starting_bid = 10, bid_step = 5 } = req.body;
 
-  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
-  if (!auction) {
-    return res.status(404).json({ error: 'Leilão não encontrado.' });
-  }
+  const auction = await db.get('SELECT id FROM auctions WHERE id = ? AND club_id = ?', auctionId, req.clubId);
+  if (!auction) return res.status(404).json({ error: 'Leilão não encontrado.' });
 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'Título do item é obrigatório.' });
@@ -271,15 +250,16 @@ router.post('/:id/items', authMiddleware, requireRole(['superadmin', 'director']
   const starting = parseInt(starting_bid, 10) || 10;
   const step = parseInt(bid_step, 10) || 5;
 
-  const count = db.prepare('SELECT COUNT(*) as count FROM auction_items WHERE auction_id = ?').get(auctionId).count;
+  const countRow = await db.get('SELECT COUNT(*) as count FROM auction_items WHERE auction_id = ?', auctionId);
+  const count = Number(countRow.count || 0);
 
-  const result = db.prepare(`
+  const result = await db.run(`
     INSERT INTO auction_items (auction_id, title, description, image_url, starting_bid, bid_step, current_bid, status, order_num)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
-  `).run(auctionId, title.trim(), description || '', image_url || null, starting, step, starting, count + 1);
+  `, auctionId, title.trim(), description || '', image_url || null, starting, step, starting, count + 1);
 
   const itemId = Number(result.lastInsertRowid);
-  logAudit(req.user.id, 'ADD_AUCTION_ITEM', 'auction_items', itemId, { auctionId, title, starting });
+  await logAudit(req.user.id, 'ADD_AUCTION_ITEM', 'auction_items', itemId, { auctionId, title, starting }, req.clubId);
 
   return res.status(201).json({
     success: true,
@@ -288,20 +268,17 @@ router.post('/:id/items', authMiddleware, requireRole(['superadmin', 'director']
   });
 });
 
-// Excluir leilão (Superadmin ou Diretoria)
-router.delete('/:id', authMiddleware, requireRole(['superadmin', 'director']), (req, res) => {
+router.delete('/:id', authMiddleware, requireRole(['superadmin', 'director']), async (req, res) => {
   const auctionId = req.params.id;
 
-  const auction = db.prepare('SELECT id FROM auctions WHERE id = ? AND club_id = ?').get(auctionId, req.clubId);
-  if (!auction) {
-    return res.status(404).json({ error: 'Leilão não encontrado.' });
-  }
+  const auction = await db.get('SELECT id FROM auctions WHERE id = ? AND club_id = ?', auctionId, req.clubId);
+  if (!auction) return res.status(404).json({ error: 'Leilão não encontrado.' });
 
-  withTransaction(() => {
-    db.prepare('DELETE FROM auction_bids WHERE auction_id = ?').run(auctionId);
-    db.prepare('DELETE FROM auction_items WHERE auction_id = ?').run(auctionId);
-    db.prepare('DELETE FROM auctions WHERE id = ? AND club_id = ?').run(auctionId, req.clubId);
-    logAudit(req.user.id, 'DELETE_AUCTION', 'auctions', auctionId, 'Leilão excluído.', req.clubId);
+  await withTransaction(async () => {
+    await db.run('DELETE FROM auction_bids WHERE auction_id = ?', auctionId);
+    await db.run('DELETE FROM auction_items WHERE auction_id = ?', auctionId);
+    await db.run('DELETE FROM auctions WHERE id = ? AND club_id = ?', auctionId, req.clubId);
+    await logAudit(req.user.id, 'DELETE_AUCTION', 'auctions', auctionId, 'Leilão excluído.', req.clubId);
   });
 
   return res.json({ message: 'Leilão excluído com sucesso.' });
