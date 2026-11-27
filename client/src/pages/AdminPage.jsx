@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 
 export default function AdminPage() {
-  const { user, refreshUser } = useAuth();
+  const { user, club, refreshUser } = useAuth();
+  const [codeCopied, setCodeCopied] = useState(false);
   const [activeSection, setActiveSection] = useState('members'); // 'members', 'reset', 'settings', 'audit', 'history'
   
   // Estados de Membros
@@ -195,14 +196,40 @@ export default function AdminPage() {
   return (
     <div className="space-y-6 pb-12 animate-in fade-in">
       {/* Header do Pastor / Superadmin */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-amber-950/30 border border-purple-500/40 shadow-xl">
-        <div className="flex items-center gap-2 text-purple-400 text-xs font-bold uppercase tracking-wider mb-1">
-          <Crown className="w-4 h-4 text-amber-400" /> Painel do Pastor & Direção Geral
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-amber-950/30 border border-purple-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-purple-400 text-xs font-bold uppercase tracking-wider mb-1">
+            <Crown className="w-4 h-4 text-amber-400" /> Painel do Pastor & Direção Geral
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white">Administração do Clube</h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Gerenciamento de desbravadores, diretoria, senhas, resets com segurança e auditoria.
+          </p>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-white">Administração do Clube</h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Gerenciamento de desbravadores, diretoria, senhas, resets com segurança e auditoria.
-        </p>
+
+        {club?.join_code && (
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-amber-500/30 flex items-center gap-3 shrink-0">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Código de Convite do Clube
+              </div>
+              <div className="text-base font-mono font-black text-amber-400 tracking-wider">
+                {club.join_code}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard?.writeText(club.join_code).catch(() => {});
+                setCodeCopied(true);
+                setTimeout(() => setCodeCopied(false), 2000);
+              }}
+              className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition"
+            >
+              {codeCopied ? 'Copiado!' : 'Copiar'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Abas */}

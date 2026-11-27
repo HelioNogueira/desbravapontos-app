@@ -61,10 +61,10 @@ router.get('/:id', authMiddleware, async (req, res) => {
     FROM point_transactions pt
     LEFT JOIN users u ON pt.user_id = u.id
     LEFT JOIN users a ON pt.actor_id = a.id
-    WHERE pt.team_id = ?
+    WHERE pt.team_id = ? AND pt.club_id = ?
     ORDER BY pt.id DESC
     LIMIT 20
-  `, teamId);
+  `, teamId, req.clubId);
 
   return res.json({
     team: {

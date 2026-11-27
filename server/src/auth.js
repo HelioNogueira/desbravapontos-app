@@ -112,7 +112,11 @@ async function authMiddleware(req, res, next) {
       ? await db.get('SELECT id, name, slug, join_code, status, plan_name, monthly_price, expires_at, max_members FROM clubs WHERE id = ?', user.club_id)
       : null;
 
-    const grace = !user.is_platform_admin ? getGraceInfo(club) : { isExpired: false, inGracePeriod: false, graceEndsAt: null };
+    const envAdminEmail = (process.env.PLATFORM_ADMIN_EMAIL || '').trim().toLowerCase();
+    const isEnvPlatformAdmin = Boolean(envAdminEmail && user.email && user.email.toLowerCase() === envAdminEmail);
+    const isPlatformAdmin = Boolean(user.is_platform_admin) || isEnvPlatformAdmin;
+
+    const grace = !isPlatformAdmin ? getGraceInfo(club) : { isExpired: false, inGracePeriod: false, graceEndsAt: null };
     if (club) {
       club.isExpired = grace.isExpired;
       club.inGracePeriod = grace.inGracePeriod;
@@ -121,10 +125,14 @@ async function authMiddleware(req, res, next) {
       club.whatsapp = PLATFORM_WHATSAPP;
     }
 
+    if (isPlatformAdmin) {
+      user.is_platform_admin = 1;
+    }
+
     req.user = user;
     req.clubId = user.club_id;
     req.club = club;
-    req.isPlatformAdmin = Boolean(user.is_platform_admin);
+    req.isPlatformAdmin = isPlatformAdmin;
 
     // Permitir /api/auth/me mesmo com clube expirado para que o front exiba a tela de renovação
     if (grace.isExpired && !req.originalUrl.startsWith('/api/auth/me')) {
